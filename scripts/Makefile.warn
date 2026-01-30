@@ -106,6 +106,8 @@ KBUILD_CFLAGS += $(call cc-option,-Werror=designated-init)
 KBUILD_CFLAGS += $(call cc-option,-Wenum-conversion)
 
 KBUILD_CFLAGS += -Wunused
+KBUILD_CFLAGS += $(call cc-option, -Wno-error=unused-variable)
+KBUILD_CFLAGS += $(call cc-option, -Wno-error=unused-but-set-variable)
 
 #
 # W=1 - warnings which may be relevant and do not occur too often
