@@ -5,6 +5,7 @@
 
 #include <linux/irq.h>
 #include <linux/pm_runtime.h>
+#include <linux/suspend.h>
 
 #include "iris_firmware.h"
 #include "iris_core.h"
@@ -150,8 +151,11 @@ int iris_hfi_pm_suspend(struct iris_core *core)
 	 * controller powered and report success so system suspend is not
 	 * vetoed (iris_vpu_prepare_pc() would return -EAGAIN).
 	 */
-	if (core->iris_platform_data->legacy_vpu5)
+	if (core->iris_platform_data->legacy_vpu5) {
+		/* Drop pending restart; a rapid re-suspend would fire it mid-suspend. */
+		cancel_delayed_work(&core->wake_restart);
 		return 0;
+	}
 
 	ret = iris_vpu_prepare_pc(core);
 	if (ret) {
@@ -180,6 +184,10 @@ void iris_wake_restart_worker(struct work_struct *work)
 	struct iris_core *core =
 		container_of(work, struct iris_core, wake_restart.work);
 	int ret;
+
+	/* Skip if re-suspending: the next resume reschedules the restart. */
+	if (pm_suspend_target_state != PM_SUSPEND_ON)
+		return;
 
 	if (core->irq >= 0 &&
 	    irqd_irq_disabled(irq_get_irq_data(core->irq)))

@@ -982,6 +982,17 @@ static const struct adreno_info a6xx_gpus[] = {
 		.zapfw = "a640_zap.mdt",
 		.a6xx = &(const struct a6xx_info) {
 			.hwcg = a640_hwcg,
+			/*
+			 * ADRENO_6XX_GEN2 (a640/a680) is a GBIF part: program the
+			 * CX GBIF sideband regs before the GMU wakes up. Commit
+			 * 60a4e18e0e8a ("Do CX GBIF config before GMU start")
+			 * moved these writes out of hw_init() and into the
+			 * per-GPU catalog (.gbif_cx) list, but accidentally
+			 * omitted the GEN2 parts, dropping the
+			 * GBIF_QSB_SIDE0..3 writes that hw_init() used to
+			 * perform via adreno_is_a640_family().
+			 */
+			.gbif_cx = a640_gbif,
 			.protect = &a630_protect,
 			.gmu_cgc_mode = 0x00020202,
 			.prim_fifo_threshold = 0x00180000,
@@ -1105,6 +1116,8 @@ static const struct adreno_info a6xx_gpus[] = {
 		.zapfw = "a640_zap.mdt",
 		.a6xx = &(const struct a6xx_info) {
 			.hwcg = a640_hwcg,
+			/* a680 is ADRENO_6XX_GEN2; same GBIF omission as a640 */
+			.gbif_cx = a640_gbif,
 			.protect = &a630_protect,
 			.gmu_cgc_mode = 0x00020202,
 			.prim_fifo_threshold = 0x00200200,
