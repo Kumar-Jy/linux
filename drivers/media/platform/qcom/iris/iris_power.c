@@ -13,6 +13,11 @@
 #include "iris_resources.h"
 #include "iris_vpu_common.h"
 
+u32 iris_get_operating_fps(struct iris_inst *inst)
+{
+	return inst->frame_rate ?: DEFAULT_FPS;
+}
+
 static u32 iris_calc_bw(struct iris_inst *inst, struct icc_vote_data *data)
 {
 	const struct bw_info *bw_tbl = NULL;
@@ -46,9 +51,20 @@ static int iris_set_interconnects(struct iris_inst *inst)
 	u64 total_bw_ddr = 0;
 	int ret;
 
+	/*
+	 * The legacy VPU5 RPMh path can stop completing active interconnect
+	 * votes when several 4K sessions are running.  iris_vpu_power_on()
+	 * already establishes the maximum video-mem vote before firmware boot,
+	 * so retain that vote until iris_vpu_power_off() removes it.  Runtime
+	 * scaling remains enabled for newer hardware.
+	 */
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
+
 	mutex_lock(&core->lock);
 	list_for_each_entry(instance, &core->instances, list) {
-		if (!instance->max_input_data_size)
+		if (!instance->hfi_session_opened ||
+		    !instance->max_input_data_size)
 			continue;
 
 		total_bw_ddr += instance->power.icc_bw;
@@ -68,7 +84,7 @@ static int iris_vote_interconnects(struct iris_inst *inst)
 
 	vote_data->width = inp_f->fmt.pix_mp.width;
 	vote_data->height = inp_f->fmt.pix_mp.height;
-	vote_data->fps = DEFAULT_FPS;
+	vote_data->fps = iris_get_operating_fps(inst);
 
 	inst->power.icc_bw = iris_calc_bw(inst, vote_data);
 
@@ -82,16 +98,34 @@ static int iris_set_clocks(struct iris_inst *inst)
 	u64 freq = 0;
 	int ret;
 
+	/*
+	 * iris_vpu_power_on() already selects the maximum OPP for legacy VPU5.
+	 * Changing that OPP while VideoCC/MMCX is active can wedge the RPMh TCS,
+	 * so keep it until iris_vpu_power_off() clears the vote.  Newer hardware
+	 * continues to use per-session runtime clock scaling.
+	 */
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
+
 	mutex_lock(&core->lock);
 	list_for_each_entry(instance, &core->instances, list) {
-		if (!instance->max_input_data_size)
+		if (!instance->hfi_session_opened ||
+		    !instance->max_input_data_size)
 			continue;
 
 		freq += instance->power.min_freq;
 	}
 
-	core->power.clk_freq = freq;
-	ret = iris_opp_set_rate(core->dev, freq);
+	if (freq == core->power.clk_freq) {
+		ret = 0;
+		goto unlock;
+	}
+
+	ret = dev_pm_opp_set_rate(core->dev, freq);
+	if (!ret)
+		core->power.clk_freq = freq;
+
+unlock:
 	mutex_unlock(&core->lock);
 
 	return ret;
@@ -132,9 +166,33 @@ int iris_scale_power(struct iris_inst *inst)
 		pm_runtime_put_autosuspend(core->dev);
 	}
 
+	/*
+	 * Legacy VPU5 holds the maximum OPP and interconnect vote for the whole
+	 * power session, so per-qbuf clock/interconnect scaling is a no-op there
+	 * (iris_set_clocks() and iris_set_interconnects() both return early).
+	 * Skipping the per-qbuf input-buffer scan avoids an O(N) walk on every
+	 * QBUF in the decode path.
+	 */
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
+
 	ret = iris_scale_clocks(inst);
 	if (ret)
 		return ret;
 
 	return iris_vote_interconnects(inst);
+}
+
+int iris_unvote_power(struct iris_inst *inst)
+{
+	int ret, ret2;
+
+	inst->max_input_data_size = 0;
+	inst->power.min_freq = 0;
+	inst->power.icc_bw = 0;
+
+	ret = iris_set_clocks(inst);
+	ret2 = iris_set_interconnects(inst);
+
+	return ret ?: ret2;
 }

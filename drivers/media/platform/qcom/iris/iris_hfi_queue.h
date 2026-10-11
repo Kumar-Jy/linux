@@ -9,10 +9,13 @@
 struct iris_core;
 
 /*
- * Max 64 Buffers ( 32 input buffers and 32 output buffers)
- * can be queued by v4l2 framework at any given time.
+ * The SM8150 VPU5 HFI Gen1 firmware uses the legacy Venus queue ABI:
+ * 50 buffers per session.  Using the newer Iris value of 64 expands the
+ * advertised UC region from 3 MiB to 4 MiB, beyond the memory actually
+ * allocated for the three queues, and can lock up the multimedia
+ * interconnect as soon as the firmware CPU starts touching the queues.
  */
-#define IFACEQ_MAX_BUF_COUNT		64
+#define IFACEQ_MAX_BUF_COUNT		50
 /*
  * Max session supported are 16.
  * this value is used to calcualte the size of
@@ -162,6 +165,21 @@ struct iris_hfi_queue_table_header {
 	u32 num_active_q;
 	void *device_addr;
 	char name[256]; /* NUL-terminated array of characters */
+	struct iris_hfi_queue_header q_hdr[IFACEQ_NUMQ];
+};
+
+/*
+ * VPU5/HFI Gen1 predates the extended Iris queue-table header.  Its
+ * firmware expects the first queue header immediately after the six common
+ * u32 fields (offset 24), with no host pointer or name in between.
+ */
+struct iris_hfi_legacy_queue_table_header {
+	u32 version;
+	u32 size;
+	u32 qhdr0_offset;
+	u32 qhdr_size;
+	u32 num_q;
+	u32 num_active_q;
 	struct iris_hfi_queue_header q_hdr[IFACEQ_NUMQ];
 };
 

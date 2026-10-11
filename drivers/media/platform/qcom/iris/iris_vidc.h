@@ -6,7 +6,20 @@
 #ifndef __IRIS_VIDC_H__
 #define __IRIS_VIDC_H__
 
+#include <linux/videodev2.h>
+
 struct iris_core;
+
+struct iris_surface_fence_cmd {
+	__u32 op;
+	__s32 dmabuf_fd;
+	__u64 token;
+};
+
+#define IRIS_SURFACE_FENCE_ATTACH	1
+#define IRIS_SURFACE_FENCE_SIGNAL	2
+#define VIDIOC_IRIS_SURFACE_FENCE \
+	_IOW('V', BASE_VIDIOC_PRIVATE, struct iris_surface_fence_cmd)
 
 void iris_init_ops(struct iris_core *core);
 int iris_open(struct file *filp);

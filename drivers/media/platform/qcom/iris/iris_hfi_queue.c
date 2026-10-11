@@ -3,11 +3,41 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/delay.h>
+#include <linux/iommu.h>
 #include <linux/pm_runtime.h>
 
 #include "iris_core.h"
 #include "iris_hfi_queue.h"
 #include "iris_vpu_common.h"
+
+static u32 iris_hfi_queue_table_size(struct iris_core *core)
+{
+	if (core->iris_platform_data->legacy_vpu5)
+		return sizeof(struct iris_hfi_legacy_queue_table_header);
+
+	return sizeof(struct iris_hfi_queue_table_header);
+}
+
+static u32 iris_hfi_queue_alloc_size(struct iris_core *core)
+{
+	u32 queue_size;
+
+	queue_size = ALIGN(iris_hfi_queue_table_size(core) +
+			   (IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+
+	/*
+	 * VPU5 firmware is given a 1 MiB-aligned UC region size.  Unlike the
+	 * downstream allocator, dma_alloc_attrs() does not guarantee that the
+	 * separately allocated SFR and the unused tail are adjacent to the
+	 * queue IOVA.  Map the complete advertised region so speculative or
+	 * bounds-checking firmware accesses cannot fault in its unmapped tail.
+	 */
+	if (core->iris_platform_data->legacy_vpu5)
+		return ALIGN(SFR_SIZE + queue_size, SZ_1M);
+
+	return queue_size;
+}
 
 static int iris_hfi_queue_write(struct iris_iface_q_info *qinfo, void *packet, u32 packet_size)
 {
@@ -112,11 +142,23 @@ static int iris_hfi_queue_read(struct iris_iface_q_info *qinfo, void *packet)
 int iris_hfi_queue_cmd_write_locked(struct iris_core *core, void *pkt, u32 pkt_size)
 {
 	struct iris_iface_q_info *q_info = &core->command_queue;
+	struct iris_hfi_queue_header *qhdr = q_info->qhdr;
+	u32 *words = pkt;
 
 	if (core->state == IRIS_CORE_ERROR || core->state == IRIS_CORE_DEINIT)
 		return -EINVAL;
 
 	if (!iris_hfi_queue_write(q_info, pkt, pkt_size)) {
+		dev_dbg(core->dev,
+			 "HFI cmd: bytes=%u words=%#x,%#x,%#x,%#x,%#x; q status=%#x start=%#x type=%#x size=%u rx_req=%u tx_req=%u r=%u w=%u\n",
+			 pkt_size, words[0], words[1],
+			 pkt_size >= 3 * sizeof(*words) ? words[2] : 0,
+			 pkt_size >= 4 * sizeof(*words) ? words[3] : 0,
+			 pkt_size >= 5 * sizeof(*words) ? words[4] : 0,
+			 qhdr->status, qhdr->start_addr,
+			 ((u32)qhdr->header_type << 16) | qhdr->queue_type,
+			 qhdr->q_size, qhdr->rx_req, qhdr->tx_req,
+			 qhdr->read_idx, qhdr->write_idx);
 		iris_vpu_raise_interrupt(core);
 	} else {
 		dev_err(core->dev, "queue full\n");
@@ -226,12 +268,18 @@ static void
 iris_hfi_queue_init(struct iris_core *core, u32 queue_id, struct iris_iface_q_info *iface_q)
 {
 	struct iris_hfi_queue_table_header *q_tbl_hdr = core->iface_q_table_vaddr;
-	u32 offset = sizeof(*q_tbl_hdr) + (queue_id * IFACEQ_QUEUE_SIZE);
+	struct iris_hfi_legacy_queue_table_header *legacy_tbl_hdr =
+		core->iface_q_table_vaddr;
+	u32 offset = iris_hfi_queue_table_size(core) +
+		     (queue_id * IFACEQ_QUEUE_SIZE);
 
 	iface_q->device_addr = core->iface_q_table_daddr + offset;
 	iface_q->kernel_vaddr =
 			(void *)((char *)core->iface_q_table_vaddr + offset);
-	iface_q->qhdr = &q_tbl_hdr->q_hdr[queue_id];
+	if (core->iris_platform_data->legacy_vpu5)
+		iface_q->qhdr = &legacy_tbl_hdr->q_hdr[queue_id];
+	else
+		iface_q->qhdr = &q_tbl_hdr->q_hdr[queue_id];
 
 	iris_hfi_queue_set_header(core, queue_id, iface_q);
 }
@@ -246,10 +294,18 @@ static void iris_hfi_queue_deinit(struct iris_iface_q_info *iface_q)
 int iris_hfi_queues_init(struct iris_core *core)
 {
 	struct iris_hfi_queue_table_header *q_tbl_hdr;
-	u32 queue_size;
+	struct iris_hfi_legacy_queue_table_header *legacy_tbl_hdr;
+	struct iommu_domain *domain;
+	phys_addr_t first_phys, last_phys;
+	u32 queue_size, queue_used;
 
 	/* Iris hardware requires 4K queue alignment */
-	queue_size = ALIGN((sizeof(*q_tbl_hdr) + (IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ)), SZ_4K);
+	queue_used = ALIGN(iris_hfi_queue_table_size(core) +
+			   (IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+	queue_size = iris_hfi_queue_alloc_size(core);
+	dev_info(core->dev,
+		 "HFI queues: allocating %u-byte queue region (%u bytes used)\n",
+		 queue_size, queue_used);
 	core->iface_q_table_vaddr = dma_alloc_attrs(core->dev, queue_size,
 						    &core->iface_q_table_daddr,
 						    GFP_KERNEL, DMA_ATTR_WRITE_COMBINE);
@@ -257,7 +313,36 @@ int iris_hfi_queues_init(struct iris_core *core)
 		dev_err(core->dev, "queues alloc and map failed\n");
 		return -ENOMEM;
 	}
+	memset(core->iface_q_table_vaddr, 0, queue_size);
+	dev_info(core->dev, "HFI queues: queue table allocated at %pad\n",
+		 &core->iface_q_table_daddr);
 
+	if (core->iris_platform_data->legacy_vpu5) {
+		domain = iommu_get_domain_for_dev(core->dev);
+		if (!domain) {
+			dev_warn(core->dev,
+				 "HFI queues: no IOMMU domain attached to video device\n");
+		} else {
+			first_phys = iommu_iova_to_phys(domain,
+						       core->iface_q_table_daddr);
+			last_phys = iommu_iova_to_phys(domain,
+						      core->iface_q_table_daddr +
+						      queue_size - 1);
+			dev_info(core->dev,
+				 "HFI queues: IOMMU coverage IOVA %pad..%pad -> phys %pa..%pa\n",
+				 &core->iface_q_table_daddr,
+				 &(dma_addr_t) {
+					core->iface_q_table_daddr + queue_size - 1
+				 },
+				 &first_phys, &last_phys);
+			if (!first_phys || !last_phys)
+				dev_err(core->dev,
+					"HFI queues: queue IOVA is not fully mapped\n");
+		}
+	}
+
+	dev_info(core->dev, "HFI queues: allocating %u-byte SFR buffer\n",
+		 SFR_SIZE);
 	core->sfr_vaddr = dma_alloc_attrs(core->dev, SFR_SIZE,
 					  &core->sfr_daddr,
 					  GFP_KERNEL, DMA_ATTR_WRITE_COMBINE);
@@ -267,24 +352,54 @@ int iris_hfi_queues_init(struct iris_core *core)
 			       core->iface_q_table_daddr, DMA_ATTR_WRITE_COMBINE);
 		return -ENOMEM;
 	}
+	dev_info(core->dev, "HFI queues: SFR buffer allocated at %pad\n",
+		 &core->sfr_daddr);
 
+	dev_info(core->dev, "HFI queues: initializing command queue\n");
 	iris_hfi_queue_init(core, IFACEQ_CMDQ_ID, &core->command_queue);
+	dev_info(core->dev, "HFI queues: initializing message queue\n");
 	iris_hfi_queue_init(core, IFACEQ_MSGQ_ID, &core->message_queue);
+	dev_info(core->dev, "HFI queues: initializing debug queue\n");
 	iris_hfi_queue_init(core, IFACEQ_DBGQ_ID, &core->debug_queue);
 
-	q_tbl_hdr = (struct iris_hfi_queue_table_header *)core->iface_q_table_vaddr;
-	q_tbl_hdr->version = 0;
-	q_tbl_hdr->device_addr = (void *)core;
-	strscpy(q_tbl_hdr->name, "iris-hfi-queues", sizeof(q_tbl_hdr->name));
-	q_tbl_hdr->size = sizeof(*q_tbl_hdr);
-	q_tbl_hdr->qhdr0_offset = sizeof(*q_tbl_hdr) -
-		(IFACEQ_NUMQ * sizeof(struct iris_hfi_queue_header));
-	q_tbl_hdr->qhdr_size = sizeof(q_tbl_hdr->q_hdr[0]);
-	q_tbl_hdr->num_q = IFACEQ_NUMQ;
-	q_tbl_hdr->num_active_q = IFACEQ_NUMQ;
+	dev_info(core->dev, "HFI queues: initializing table header\n");
+	if (core->iris_platform_data->legacy_vpu5) {
+		legacy_tbl_hdr = core->iface_q_table_vaddr;
+		legacy_tbl_hdr->version = 0;
+		legacy_tbl_hdr->size = sizeof(*legacy_tbl_hdr);
+		legacy_tbl_hdr->qhdr0_offset =
+			offsetof(struct iris_hfi_legacy_queue_table_header, q_hdr);
+		legacy_tbl_hdr->qhdr_size =
+			sizeof(legacy_tbl_hdr->q_hdr[0]);
+		legacy_tbl_hdr->num_q = IFACEQ_NUMQ;
+		legacy_tbl_hdr->num_active_q = IFACEQ_NUMQ;
+		dev_info(core->dev,
+			 "HFI queues: legacy Venus table size %zu, first header offset %u\n",
+			 sizeof(*legacy_tbl_hdr),
+			 legacy_tbl_hdr->qhdr0_offset);
+	} else {
+		q_tbl_hdr = core->iface_q_table_vaddr;
+		q_tbl_hdr->version = 0;
+		q_tbl_hdr->device_addr = (void *)core;
+		strscpy(q_tbl_hdr->name, "msm_v4l2_vidc",
+			sizeof(q_tbl_hdr->name));
+		q_tbl_hdr->size = sizeof(*q_tbl_hdr);
+		q_tbl_hdr->qhdr0_offset = sizeof(*q_tbl_hdr) -
+			(IFACEQ_NUMQ * sizeof(struct iris_hfi_queue_header));
+		q_tbl_hdr->qhdr_size = sizeof(q_tbl_hdr->q_hdr[0]);
+		q_tbl_hdr->num_q = IFACEQ_NUMQ;
+		q_tbl_hdr->num_active_q = IFACEQ_NUMQ;
+	}
 
 	 /* Write sfr size in first word to be used by firmware */
 	*((u32 *)core->sfr_vaddr) = SFR_SIZE;
+	/*
+	 * Publish the complete legacy table, all queue headers and the SFR
+	 * header before the firmware is allowed to fetch them.  The Venus
+	 * HFI Gen1 implementation has the same final barrier.
+	 */
+	wmb();
+	dev_info(core->dev, "HFI queues: initialization complete\n");
 
 	return 0;
 }
@@ -306,8 +421,7 @@ void iris_hfi_queues_deinit(struct iris_core *core)
 	core->sfr_vaddr = NULL;
 	core->sfr_daddr = 0;
 
-	queue_size = ALIGN(sizeof(struct iris_hfi_queue_table_header) +
-		(IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+	queue_size = iris_hfi_queue_alloc_size(core);
 
 	dma_free_attrs(core->dev, queue_size, core->iface_q_table_vaddr,
 		       core->iface_q_table_daddr, DMA_ATTR_WRITE_COMBINE);

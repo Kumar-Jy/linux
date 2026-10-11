@@ -12,15 +12,15 @@
 #include "iris_core.h"
 #include "iris_firmware.h"
 
-#define IRIS_PAS_ID				9
-
 #define MAX_FIRMWARE_NAME_SIZE	128
 
 static int iris_load_fw_to_memory(struct iris_core *core, const char *fw_name)
 {
+	u32 pas_id = core->iris_platform_data->pas_id;
 	const struct firmware *firmware = NULL;
 	struct device *dev = core->dev;
-	struct resource res;
+	struct reserved_mem *rmem;
+	struct device_node *node;
 	phys_addr_t mem_phys;
 	size_t res_size;
 	ssize_t fw_size;
@@ -30,12 +30,17 @@ static int iris_load_fw_to_memory(struct iris_core *core, const char *fw_name)
 	if (strlen(fw_name) >= MAX_FIRMWARE_NAME_SIZE - 4)
 		return -EINVAL;
 
-	ret = of_reserved_mem_region_to_resource(dev->of_node, 0, &res);
-	if (ret)
-		return ret;
+	node = of_parse_phandle(dev->of_node, "memory-region", 0);
+	if (!node)
+		return -EINVAL;
 
-	mem_phys = res.start;
-	res_size = resource_size(&res);
+	rmem = of_reserved_mem_lookup(node);
+	of_node_put(node);
+	if (!rmem)
+		return -EINVAL;
+
+	mem_phys = rmem->base;
+	res_size = rmem->size;
 
 	ret = request_firmware(&firmware, fw_name, dev);
 	if (ret)
@@ -54,49 +59,50 @@ static int iris_load_fw_to_memory(struct iris_core *core, const char *fw_name)
 	}
 
 	ret = qcom_mdt_load(dev, firmware, fw_name,
-			    IRIS_PAS_ID, mem_virt, mem_phys, res_size, NULL);
-
+			    pas_id, mem_virt, mem_phys, res_size, NULL);
 	memunmap(mem_virt);
+	release_firmware(firmware);
+	if (ret)
+		return ret;
+
+	dev_info(dev, "firmware image copied; starting PAS authentication (id %u)\n",
+		 pas_id);
+	ret = qcom_scm_pas_auth_and_reset(pas_id);
+	dev_info(dev, "PAS authentication returned %d\n", ret);
+
+	return ret;
+
 err_release_fw:
 	release_firmware(firmware);
-
 	return ret;
 }
 
 int iris_fw_load(struct iris_core *core)
 {
-	const struct tz_cp_config *cp_config;
+	struct tz_cp_config *cp_config = core->iris_platform_data->tz_cp_config_data;
 	const char *fwpath = NULL;
-	int i, ret;
+	int ret;
 
 	ret = of_property_read_string_index(core->dev->of_node, "firmware-name", 0,
 					    &fwpath);
 	if (ret)
-		fwpath = core->iris_firmware_desc->fwname;
+		fwpath = core->iris_platform_data->fwname;
 
+	dev_info(core->dev, "requesting firmware '%s'\n", fwpath);
 	ret = iris_load_fw_to_memory(core, fwpath);
 	if (ret) {
 		dev_err(core->dev, "firmware download failed\n");
 		return -ENOMEM;
 	}
 
-	ret = qcom_scm_pas_auth_and_reset(IRIS_PAS_ID);
-	if (ret)  {
-		dev_err(core->dev, "auth and reset failed: %d\n", ret);
+	ret = qcom_scm_mem_protect_video_var(cp_config->cp_start,
+					     cp_config->cp_size,
+					     cp_config->cp_nonpixel_start,
+					     cp_config->cp_nonpixel_size);
+	if (ret) {
+		dev_err(core->dev, "protect memory failed\n");
+		qcom_scm_pas_shutdown(core->iris_platform_data->pas_id);
 		return ret;
-	}
-
-	for (i = 0; i < core->iris_platform_data->tz_cp_config_data_size; i++) {
-		cp_config = &core->iris_platform_data->tz_cp_config_data[i];
-		ret = qcom_scm_mem_protect_video_var(cp_config->cp_start,
-						     cp_config->cp_size,
-						     cp_config->cp_nonpixel_start,
-						     cp_config->cp_nonpixel_size);
-		if (ret) {
-			dev_err(core->dev, "qcom_scm_mem_protect_video_var failed: %d\n", ret);
-			qcom_scm_pas_shutdown(IRIS_PAS_ID);
-			return ret;
-		}
 	}
 
 	return ret;
@@ -104,7 +110,7 @@ int iris_fw_load(struct iris_core *core)
 
 int iris_fw_unload(struct iris_core *core)
 {
-	return qcom_scm_pas_shutdown(IRIS_PAS_ID);
+	return qcom_scm_pas_shutdown(core->iris_platform_data->pas_id);
 }
 
 int iris_set_hw_state(struct iris_core *core, bool resume)

@@ -3,6 +3,7 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/irq.h>
 #include <linux/pm_runtime.h>
 
 #include "iris_firmware.h"
@@ -76,8 +77,19 @@ u32 iris_hfi_get_v4l2_matrix_coefficients(u32 hfi_coefficients)
 
 int iris_hfi_core_init(struct iris_core *core)
 {
-	const struct iris_hfi_sys_ops *hfi_ops = core->hfi_sys_ops;
+	const struct iris_hfi_command_ops *hfi_ops = core->hfi_ops;
 	int ret;
+
+	/*
+	 * Wait for the VPU5 SYS_INIT response before sending any further
+	 * command.  The downstream Venus driver sends its default system
+	 * properties later, immediately before SESSION_INIT.
+	 */
+	if (core->iris_platform_data->legacy_vpu5) {
+		dev_info(core->dev,
+			 "Iris1 v88: sending SYS_INIT through legacy HFI queue\n");
+		return hfi_ops->sys_init(core);
+	}
 
 	ret = hfi_ops->sys_init(core);
 	if (ret)
@@ -92,7 +104,18 @@ int iris_hfi_core_init(struct iris_core *core)
 
 irqreturn_t iris_hfi_isr(int irq, void *data)
 {
+	struct iris_core *core = data;
+
 	disable_irq_nosync(irq);
+
+	/*
+	 * SM8150 VPU5 signals a level-high interrupt.  Clear the source in
+	 * the hard IRQ handler, as the legacy Venus driver does.  Deferring
+	 * the clear leaves the source asserted during firmware boot because
+	 * iris_core_init() owns core->lock while the threaded handler waits.
+	 */
+	if (core && core->iris_platform_data->legacy_vpu5)
+		iris_vpu_clear_interrupt(core);
 
 	return IRQ_WAKE_THREAD;
 }
@@ -106,10 +129,11 @@ irqreturn_t iris_hfi_isr_handler(int irq, void *data)
 
 	mutex_lock(&core->lock);
 	pm_runtime_mark_last_busy(core->dev);
-	iris_vpu_clear_interrupt(core);
+	if (!core->iris_platform_data->legacy_vpu5)
+		iris_vpu_clear_interrupt(core);
 	mutex_unlock(&core->lock);
 
-	core->hfi_sys_ops->sys_hfi_response_handler(core);
+	core->hfi_response_ops->hfi_response_handler(core);
 
 	if (!iris_vpu_watchdog(core, core->intr_status))
 		enable_irq(irq);
@@ -120,6 +144,14 @@ irqreturn_t iris_hfi_isr_handler(int irq, void *data)
 int iris_hfi_pm_suspend(struct iris_core *core)
 {
 	int ret;
+
+	/*
+	 * SM8150 VPU5 has no supported power-collapse sequence.  Keep the
+	 * controller powered and report success so system suspend is not
+	 * vetoed (iris_vpu_prepare_pc() would return -EAGAIN).
+	 */
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
 
 	ret = iris_vpu_prepare_pc(core);
 	if (ret) {
@@ -137,15 +169,56 @@ int iris_hfi_pm_suspend(struct iris_core *core)
 	return 0;
 
 error:
-	dev_err(core->dev, "failed to suspend\n");
+	dev_err_once(core->dev,
+		     "failed to suspend (%d); suppressing repeated messages\n", ret);
 
 	return ret;
 }
 
+void iris_wake_restart_worker(struct work_struct *work)
+{
+	struct iris_core *core =
+		container_of(work, struct iris_core, wake_restart.work);
+	int ret;
+
+	if (core->irq >= 0 &&
+	    irqd_irq_disabled(irq_get_irq_data(core->irq)))
+		enable_irq(core->irq);
+
+	iris_core_deinit(core);
+	ret = iris_core_init(core);
+	if (ret)
+		dev_err(core->dev,
+			"VPU firmware restart failed after s2idle resume: %d\n"
+			"(firmware may still be wedged; reboot clears)\n",
+			ret);
+	else
+		dev_info(core->dev,
+			 "restarted VPU firmware after s2idle resume\n");
+}
+
 int iris_hfi_pm_resume(struct iris_core *core)
 {
-	const struct iris_hfi_sys_ops *ops = core->hfi_sys_ops;
+	const struct iris_hfi_command_ops *ops = core->hfi_ops;
 	int ret;
+
+	/*
+	 * VPU5 stays powered through s2idle, but the HFI transport wedges at
+	 * wake: SESSION_INIT responses stop arriving until the firmware is
+	 * re-initialized (full teardown), as a SYS_INIT re-send is insufficient.
+	 */
+	if (core->iris_platform_data->legacy_vpu5) {
+		/*
+		 * A synchronous rebuild here would deadlock: running inside
+		 * dpm_resume, the VPU clock and power domains are still
+		 * resuming.  Queue the restart in process context instead,
+		 * which replays firmware-error recovery (deinit + init) after
+		 * resume and clears the s2idle wedge before any session opens.
+		 */
+		schedule_delayed_work(&core->wake_restart,
+				      msecs_to_jiffies(1000));
+		return 0;
+	}
 
 	ret = iris_vpu_power_on(core);
 	if (ret)
@@ -156,10 +229,6 @@ int iris_hfi_pm_resume(struct iris_core *core)
 		goto err_power_off;
 
 	ret = iris_vpu_boot_firmware(core);
-	if (ret)
-		goto err_suspend_hw;
-
-	ret = iris_vpu_switch_to_hwmode(core);
 	if (ret)
 		goto err_suspend_hw;
 

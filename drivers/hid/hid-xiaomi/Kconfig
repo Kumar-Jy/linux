@@ -1,0 +1,18 @@
+config HID_XIAOMI
+	tristate "Xiaomi HID support"
+	help
+	  Generic HID driver for Xiaomi devices.
+
+config XIAOMI_KEYBOARD
+	tristate "Xiaomi Keyboard (HID)"
+	select HID_XIAOMI
+	default m
+	help
+	  Xiaomi keyboard HID driver.
+
+config XIAOMI_MOUSE
+	tristate "Xiaomi Mouse (HID)"
+	select HID_XIAOMI
+	default m
+	help
+	  Xiaomi mouse HID driver.

@@ -28,7 +28,10 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/spinlock.h>
+#include <linux/notifier.h>
 #include <dt-bindings/input/gpio-keys.h>
+
+static BLOCKING_NOTIFIER_HEAD(gpio_keys_lid_notifier);
 
 struct gpio_button_data {
 	const struct gpio_keys_button *button;
@@ -379,6 +382,10 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 	} else {
 		input_event(input, type, *bdata->code, state);
 	}
+
+	if (type == EV_SW && button->enable_notify_chain)
+		blocking_notifier_call_chain(&gpio_keys_lid_notifier,
+					     *bdata->code, &state);
 }
 
 static void gpio_keys_debounce_event(struct gpio_button_data *bdata)
@@ -825,6 +832,9 @@ gpio_keys_get_devtree_pdata(struct device *dev)
 		button->can_disable =
 			fwnode_property_read_bool(child, "linux,can-disable");
 
+		button->enable_notify_chain =
+			fwnode_property_read_bool(child, "linux,notify-chain");
+
 		if (fwnode_property_read_u32(child, "debounce-interval",
 					 &button->debounce_interval))
 			button->debounce_interval = 5;
@@ -840,6 +850,35 @@ static const struct of_device_id gpio_keys_of_match[] = {
 	{ },
 };
 MODULE_DEVICE_TABLE(of, gpio_keys_of_match);
+
+/**
+ * gpio_keys_lid_notifier_register - register a notifier for lid switch events
+ * @nb: notifier_block to register
+ *
+ * Register a callback to be notified of lid/cover switch state changes
+ * for buttons that have linux,notify-chain property set.
+ * The callback receives the switch code (e.g. SW_LID) and a pointer to
+ * the state (0 = open, 1 = closed).
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+__maybe_unused int gpio_keys_lid_notifier_register(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&gpio_keys_lid_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(gpio_keys_lid_notifier_register);
+
+/**
+ * gpio_keys_lid_notifier_unregister - unregister a lid notifier
+ * @nb: previously registered notifier_block
+ *
+ * Remove a previously registered notifier callback.
+ */
+__maybe_unused int gpio_keys_lid_notifier_unregister(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&gpio_keys_lid_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(gpio_keys_lid_notifier_unregister);
 
 static int gpio_keys_probe(struct platform_device *pdev)
 {

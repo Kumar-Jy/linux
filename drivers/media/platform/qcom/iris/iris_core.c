@@ -3,6 +3,7 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/delay.h>
 #include <linux/pm_runtime.h>
 
 #include "iris_core.h"
@@ -12,37 +13,50 @@
 
 void iris_core_deinit(struct iris_core *core)
 {
-	int ret;
+	/*
+	 * The core starts in DEINIT and remains there while allow_fw_boot is
+	 * disabled.  Do not resume power domains, issue PAS shutdown, or touch
+	 * VPU registers when no firmware/HFI state was ever initialized.
+	 * Qualcomm's current driver has the same state guard.
+	 */
+	if (READ_ONCE(core->state) == IRIS_CORE_DEINIT)
+		return;
 
-	ret = pm_runtime_resume_and_get(core->dev);
+	pm_runtime_resume_and_get(core->dev);
 
 	mutex_lock(&core->lock);
-	if (core->state != IRIS_CORE_DEINIT) {
-		iris_fw_unload(core);
-
-		if (!ret)
-			iris_vpu_power_off(core);
-
-		iris_hfi_queues_deinit(core);
-		core->state = IRIS_CORE_DEINIT;
-	}
+	iris_fw_unload(core);
+	iris_vpu_power_off(core);
+	iris_hfi_queues_deinit(core);
+	core->state = IRIS_CORE_DEINIT;
 	mutex_unlock(&core->lock);
 
-	if (!ret)
-		pm_runtime_put_sync(core->dev);
+	pm_runtime_put_sync(core->dev);
 }
 
 static int iris_wait_for_system_response(struct iris_core *core)
 {
+	u32 hw_response_timeout_val = core->iris_platform_data->hw_response_timeout;
 	int ret;
 
 	if (core->state == IRIS_CORE_ERROR)
 		return -EIO;
 
 	ret = wait_for_completion_timeout(&core->core_init_done,
-					  msecs_to_jiffies(HW_RESPONSE_TIMEOUT_VALUE));
+					  msecs_to_jiffies(hw_response_timeout_val));
 	if (!ret) {
+		if (core->iris_platform_data->legacy_vpu5) {
+			dev_err(core->dev,
+				"HFI timeout queues: cmd r=%u w=%u, msg r=%u w=%u, dbg r=%u w=%u\n",
+				core->command_queue.qhdr->read_idx,
+				core->command_queue.qhdr->write_idx,
+				core->message_queue.qhdr->read_idx,
+				core->message_queue.qhdr->write_idx,
+				core->debug_queue.qhdr->read_idx,
+				core->debug_queue.qhdr->write_idx);
+		}
 		core->state = IRIS_CORE_ERROR;
+		dev_err(core->dev, "timed out waiting for HFI system response\n");
 		return -ETIMEDOUT;
 	}
 
@@ -64,28 +78,45 @@ int iris_core_init(struct iris_core *core)
 
 	core->state = IRIS_CORE_INIT;
 
+	dev_info(core->dev, "initializing HFI queues\n");
 	ret = iris_hfi_queues_init(core);
 	if (ret)
 		goto error;
 
+	dev_info(core->dev, "powering on Iris hardware\n");
 	ret = iris_vpu_power_on(core);
 	if (ret)
 		goto error_queue_deinit;
 
+	dev_info(core->dev, "loading Iris firmware\n");
 	ret = iris_fw_load(core);
 	if (ret)
 		goto error_power_off;
 
+	/*
+	 * SM8150's secure VPU5 path needs the explicit remote-state resume
+	 * used by the legacy Venus driver after PAS authentication and before
+	 * the host programs HFI/CTRL_INIT.  The newer Iris platforms do not
+	 * require this on their initial boot path.
+	 */
+	if (core->iris_platform_data->legacy_vpu5) {
+		dev_info(core->dev, "resuming secure VPU5 hardware state\n");
+		ret = iris_set_hw_state(core, true);
+		if (ret) {
+			dev_err(core->dev,
+				"failed to resume secure VPU5 hardware state: %d\n",
+				ret);
+			goto error_unload_fw;
+		}
+		dev_info(core->dev, "secure VPU5 hardware state resumed\n");
+	}
+
+	dev_info(core->dev, "booting Iris firmware CPU\n");
 	ret = iris_vpu_boot_firmware(core);
 	if (ret)
 		goto error_unload_fw;
 
-	ret = iris_vpu_switch_to_hwmode(core);
-	if (ret)
-		goto error_unload_fw;
-
-	core->iris_firmware_data->init_hfi_ops(core);
-
+	dev_info(core->dev, "initializing HFI core\n");
 	ret = iris_hfi_core_init(core);
 	if (ret)
 		goto error_unload_fw;

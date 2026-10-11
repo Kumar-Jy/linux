@@ -17,7 +17,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
 #include <media/media-entity.h>
-#include <media/mipi-csi2.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-subdev.h>
@@ -29,13 +28,6 @@
 /* offset of CSID registers in VFE region for VFE 480 */
 #define VFE_480_CSID_OFFSET 0x1200
 #define VFE_480_LITE_CSID_OFFSET 0x200
-
-#define CSID_HW_VERSION		0x0
-#define		HW_VERSION_STEPPING	0
-#define		HW_VERSION_REVISION	16
-#define		HW_VERSION_GENERATION	28
-
-#define LANE_CFG_BITWIDTH 4
 
 #define MSM_CSID_NAME "msm_csid"
 
@@ -56,119 +48,119 @@ const char * const csid_testgen_modes[] = {
 static const struct csid_format_info formats_4_1[] = {
 	{
 		MEDIA_BUS_FMT_UYVY8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_VYUY8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_YUYV8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_YVYU8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_Y10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
@@ -178,147 +170,147 @@ static const struct csid_format_info formats_4_1[] = {
 static const struct csid_format_info formats_4_7[] = {
 	{
 		MEDIA_BUS_FMT_UYVY8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_VYUY8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_YUYV8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_YVYU8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_Y10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
@@ -328,154 +320,154 @@ static const struct csid_format_info formats_4_7[] = {
 static const struct csid_format_info formats_gen2[] = {
 	{
 		MEDIA_BUS_FMT_UYVY8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_VYUY8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_YUYV8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_YVYU8_1X16,
-		MIPI_CSI2_DT_YUV422_8B,
+		DATA_TYPE_YUV422_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		2,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_Y8_1X8,
-		MIPI_CSI2_DT_RAW8,
+		DATA_TYPE_RAW_8BIT,
 		DECODE_FORMAT_UNCOMPRESSED_8_BIT,
 		8,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_Y10_1X10,
-		MIPI_CSI2_DT_RAW10,
+		DATA_TYPE_RAW_10BIT,
 		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
 		10,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB12_1X12,
-		MIPI_CSI2_DT_RAW12,
+		DATA_TYPE_RAW_12BIT,
 		DECODE_FORMAT_UNCOMPRESSED_12_BIT,
 		12,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SBGGR14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGBRG14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SGRBG14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
 	},
 	{
 		MEDIA_BUS_FMT_SRGGB14_1X14,
-		MIPI_CSI2_DT_RAW14,
+		DATA_TYPE_RAW_14BIT,
 		DECODE_FORMAT_UNCOMPRESSED_14_BIT,
 		14,
 		1,
@@ -599,78 +591,6 @@ static int csid_set_clock_rates(struct csid_device *csid)
 }
 
 /*
- * csid_hw_version - CSID hardware version query
- * @csid: CSID device
- *
- * Return HW version or error
- */
-u32 csid_hw_version(struct csid_device *csid)
-{
-	u32 hw_version;
-	u32 hw_gen;
-	u32 hw_rev;
-	u32 hw_step;
-
-	hw_version = readl_relaxed(csid->base + CSID_HW_VERSION);
-	hw_gen = (hw_version >> HW_VERSION_GENERATION) & 0xF;
-	hw_rev = (hw_version >> HW_VERSION_REVISION) & 0xFFF;
-	hw_step = (hw_version >> HW_VERSION_STEPPING) & 0xFFFF;
-	dev_dbg(csid->camss->dev, "CSID:%d HW Version = %u.%u.%u\n",
-		csid->id, hw_gen, hw_rev, hw_step);
-
-	return hw_version;
-}
-
-/*
- * csid_src_pad_code - Pick an output/src format based on the input/sink format
- * @csid: CSID device
- * @sink_code: The sink format of the input
- * @match_format_idx: Request preferred index, as defined by subdevice csid
- *                    format. Set @match_code to 0 if used.
- * @match_code: Request preferred code, set @match_format_idx to 0 if used
- *
- * Return 0 on failure or src format code otherwise
- */
-u32 csid_src_pad_code(struct csid_device *csid, u32 sink_code,
-		      unsigned int match_format_idx, u32 match_code)
-{
-	if (csid->camss->res->version == CAMSS_8x16) {
-		if (match_format_idx > 0)
-			return 0;
-
-		return sink_code;
-	}
-
-	switch (sink_code) {
-	case MEDIA_BUS_FMT_SBGGR10_1X10:
-	{
-		u32 src_code[] = {
-			MEDIA_BUS_FMT_SBGGR10_1X10,
-			MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_LE,
-		};
-
-		return csid_find_code(src_code, ARRAY_SIZE(src_code),
-				      match_format_idx, match_code);
-	}
-	case MEDIA_BUS_FMT_Y10_1X10:
-	{
-		u32 src_code[] = {
-			MEDIA_BUS_FMT_Y10_1X10,
-			MEDIA_BUS_FMT_Y10_2X8_PADHI_LE,
-		};
-
-		return csid_find_code(src_code, ARRAY_SIZE(src_code),
-				      match_format_idx, match_code);
-	}
-	default:
-		if (match_format_idx > 0)
-			return 0;
-
-		return sink_code;
-	}
-}
-
-/*
  * csid_set_power - Power on/off CSID module
  * @sd: CSID V4L2 subdevice
  * @on: Requested power state
@@ -777,10 +697,13 @@ static int csid_set_stream(struct v4l2_subdev *sd, int enable)
 			return -ENOLINK;
 	}
 
-	if (csid->phy.need_vc_update) {
-		csid->res->hw_ops->configure_stream(csid, enable);
-		csid->phy.need_vc_update = false;
-	}
+	/*
+	 * configure_stream() also starts and stops the hardware.  Restricting it
+	 * to link changes leaves the CSID running state stale after the first
+	 * stream cycle because need_vc_update is cleared on stream-on.
+	 */
+	csid->res->hw_ops->configure_stream(csid, enable);
+	csid->phy.need_vc_update = false;
 
 	return 0;
 }
@@ -1189,12 +1112,24 @@ int msm_csid_subdev_init(struct camss *camss, struct csid_device *csid,
 
 	/* Regulator */
 	for (i = 0; i < ARRAY_SIZE(res->regulators); i++) {
-		if (res->regulators[i].supply)
+		if (res->regulators[i])
 			csid->num_supplies++;
 	}
 
-	ret = devm_regulator_bulk_get_const(camss->dev, csid->num_supplies,
-					    res->regulators, &csid->supplies);
+	if (csid->num_supplies) {
+		csid->supplies = devm_kmalloc_array(camss->dev,
+						    csid->num_supplies,
+						    sizeof(*csid->supplies),
+						    GFP_KERNEL);
+		if (!csid->supplies)
+			return -ENOMEM;
+	}
+
+	for (i = 0; i < csid->num_supplies; i++)
+		csid->supplies[i].supply = res->regulators[i];
+
+	ret = devm_regulator_bulk_get(camss->dev, csid->num_supplies,
+				      csid->supplies);
 	if (ret)
 		return ret;
 
@@ -1217,22 +1152,18 @@ void msm_csid_get_csid_id(struct media_entity *entity, u8 *id)
 }
 
 /*
- * csid_get_lane_assign - Calculate lane assign by csiphy/tpg lane num
- * @lane_cfg: CSI2 lane configuration
- * @num_lanes: lane num
+ * csid_get_lane_assign - Calculate CSI2 lane assign configuration parameter
+ * @lane_cfg - CSI2 lane configuration
  *
  * Return lane assign
  */
-static u32 csid_get_lane_assign(struct csiphy_lanes_cfg *lane_cfg, int num_lanes)
+static u32 csid_get_lane_assign(struct csiphy_lanes_cfg *lane_cfg)
 {
 	u32 lane_assign = 0;
-	int pos;
 	int i;
 
-	for (i = 0; i < num_lanes; i++) {
-		pos = lane_cfg ? lane_cfg->data[i].pos : i;
-		lane_assign |= pos << (i * LANE_CFG_BITWIDTH);
-	}
+	for (i = 0; i < lane_cfg->num_data; i++)
+		lane_assign |= lane_cfg->data[i].pos << (i * 4);
 
 	return lane_assign;
 }
@@ -1257,7 +1188,6 @@ static int csid_link_setup(struct media_entity *entity,
 	if ((local->flags & MEDIA_PAD_FL_SINK) &&
 	    (flags & MEDIA_LNK_FL_ENABLED)) {
 		struct v4l2_subdev *sd;
-		struct tpg_device *tpg;
 		struct csid_device *csid;
 		struct csiphy_device *csiphy;
 		struct csiphy_lanes_cfg *lane_cfg;
@@ -1272,28 +1202,18 @@ static int csid_link_setup(struct media_entity *entity,
 			return -EBUSY;
 
 		sd = media_entity_to_v4l2_subdev(remote->entity);
-		if (sd->grp_id == TPG_GRP_ID) {
-			tpg = v4l2_get_subdevdata(sd);
+		csiphy = v4l2_get_subdevdata(sd);
 
-			csid->phy.lane_cnt = tpg->res->lane_cnt;
-			csid->phy.csiphy_id = tpg->id;
-			csid->phy.lane_assign = csid_get_lane_assign(NULL, csid->phy.lane_cnt);
-			csid->tpg_linked = true;
-		} else {
-			csiphy = v4l2_get_subdevdata(sd);
+		/* If a sensor is not linked to CSIPHY */
+		/* do no allow a link from CSIPHY to CSID */
+		if (!csiphy->cfg.csi2)
+			return -EPERM;
 
-			/* If a sensor is not linked to CSIPHY */
-			/* do no allow a link from CSIPHY to CSID */
-			if (!csiphy->cfg.csi2)
-				return -EPERM;
+		csid->phy.csiphy_id = csiphy->id;
 
-			csid->phy.csiphy_id = csiphy->id;
-
-			lane_cfg = &csiphy->cfg.csi2->lane_cfg;
-			csid->phy.lane_cnt = lane_cfg->num_data;
-			csid->phy.lane_assign = csid_get_lane_assign(lane_cfg, lane_cfg->num_data);
-			csid->tpg_linked = false;
-		}
+		lane_cfg = &csiphy->cfg.csi2->lane_cfg;
+		csid->phy.lane_cnt = lane_cfg->num_data;
+		csid->phy.lane_assign = csid_get_lane_assign(lane_cfg);
 	}
 	/* Decide which virtual channels to enable based on which source pads are enabled */
 	if (local->flags & MEDIA_PAD_FL_SOURCE) {

@@ -10,7 +10,6 @@
 #include <linux/pm_opp.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
-#include <linux/soc/qcom/ubwc.h>
 
 #include "iris_core.h"
 #include "iris_ctrls.h"
@@ -41,6 +40,8 @@ static int iris_init_icc(struct iris_core *core)
 
 static int iris_init_power_domains(struct iris_core *core)
 {
+	const struct platform_clk_data *clk_tbl;
+	u32 clk_cnt, i;
 	int ret;
 
 	struct dev_pm_domain_attach_data iris_pd_data = {
@@ -55,29 +56,24 @@ static int iris_init_power_domains(struct iris_core *core)
 		.pd_flags = PD_FLAG_DEV_LINK_ON | PD_FLAG_REQUIRED_OPP,
 	};
 
-	struct dev_pm_opp_config iris_opp_clk_data = {
-		.clk_names = core->iris_platform_data->opp_clk_tbl,
-		.config_clks = dev_pm_opp_config_clks_simple,
-	};
-
 	ret = devm_pm_domain_attach_list(core->dev, &iris_pd_data, &core->pmdomain_tbl);
 	if (ret < 0)
 		return ret;
 
 	ret =  devm_pm_domain_attach_list(core->dev, &iris_opp_pd_data, &core->opp_pmdomain_tbl);
-	/* backwards compatibility for incomplete ABI SM8250 */
-	if (ret == -ENODEV &&
-	    of_device_is_compatible(core->dev->of_node, "qcom,sm8250-venus")) {
-		iris_opp_pd_data.num_pd_names--;
-		ret = devm_pm_domain_attach_list(core->dev, &iris_opp_pd_data,
-						 &core->opp_pmdomain_tbl);
-	}
 	if (ret < 0)
 		return ret;
 
-	ret = devm_pm_opp_set_config(core->dev, &iris_opp_clk_data);
-	if (ret)
-		return ret;
+	clk_tbl = core->iris_platform_data->clk_tbl;
+	clk_cnt = core->iris_platform_data->clk_tbl_size;
+
+	for (i = 0; i < clk_cnt; i++) {
+		if (clk_tbl[i].clk_type == IRIS_HW_CLK) {
+			ret = devm_pm_opp_set_clkname(core->dev, clk_tbl[i].clk_name);
+			if (ret)
+				return ret;
+		}
+	}
 
 	return devm_pm_opp_of_add_table(core->dev);
 }
@@ -241,6 +237,7 @@ static int iris_probe(struct platform_device *pdev)
 
 	INIT_LIST_HEAD(&core->instances);
 	INIT_DELAYED_WORK(&core->sys_error_handler, iris_sys_error_handler);
+	INIT_DELAYED_WORK(&core->wake_restart, iris_wake_restart_worker);
 
 	core->reg_base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(core->reg_base))
@@ -251,21 +248,17 @@ static int iris_probe(struct platform_device *pdev)
 		return core->irq;
 
 	core->iris_platform_data = of_device_get_match_data(core->dev);
-	core->iris_firmware_desc = core->iris_platform_data->firmware_desc;
-	core->iris_firmware_data = core->iris_firmware_desc->firmware_data;
-
-	core->ubwc_cfg = qcom_ubwc_config_get_data();
-	if (IS_ERR(core->ubwc_cfg))
-		return PTR_ERR(core->ubwc_cfg);
 
 	ret = devm_request_threaded_irq(core->dev, core->irq, iris_hfi_isr,
-					iris_hfi_isr_handler,
-					IRQF_TRIGGER_HIGH | IRQF_NO_AUTOEN,
-					"iris", core);
+					iris_hfi_isr_handler, IRQF_TRIGGER_HIGH, "iris", core);
 	if (ret)
 		return ret;
 
+	disable_irq_nosync(core->irq);
+
 	iris_init_ops(core);
+	core->iris_platform_data->init_hfi_command_ops(core);
+	core->iris_platform_data->init_hfi_response_ops(core);
 
 	ret = iris_init_resources(core);
 	if (ret)
@@ -301,6 +294,16 @@ static int iris_probe(struct platform_device *pdev)
 	ret = devm_pm_runtime_enable(core->dev);
 	if (ret)
 		goto err_vdev_unreg_enc;
+
+	/*
+	 * The legacy VPU5 power-collapse sequence is not implemented yet:
+	 * iris_vpu_prepare_pc() deliberately returns -EAGAIN to keep the
+	 * controller powered.  Forbid runtime PM so autosuspend cannot retry
+	 * that unsupported transition in a workqueue/printk loop while the
+	 * device is otherwise idle.
+	 */
+	if (core->iris_platform_data->legacy_vpu5)
+		pm_runtime_forbid(core->dev);
 
 	return 0;
 
@@ -365,12 +368,12 @@ static const struct of_device_id iris_dt_match[] = {
 		.data = &qcs8300_data,
 	},
 	{
-		.compatible = "qcom,sc7280-venus",
-		.data = &sc7280_data,
-	},
-	{
 		.compatible = "qcom,sm8250-venus",
 		.data = &sm8250_data,
+	},
+	{
+		.compatible = "qcom,sm8150-iris",
+		.data = &sm8150_data,
 	},
 	{
 		.compatible = "qcom,sm8550-iris",
@@ -379,14 +382,6 @@ static const struct of_device_id iris_dt_match[] = {
 	{
 		.compatible = "qcom,sm8650-iris",
 		.data = &sm8650_data,
-	},
-	{
-		.compatible = "qcom,sm8750-iris",
-		.data = &sm8750_data,
-	},
-	{
-		.compatible = "qcom,x1p42100-iris",
-		.data = &x1p42100_data,
 	},
 	{ },
 };
@@ -405,3 +400,4 @@ static struct platform_driver qcom_iris_driver = {
 module_platform_driver(qcom_iris_driver);
 MODULE_DESCRIPTION("Qualcomm iris video driver");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("DMA_BUF");

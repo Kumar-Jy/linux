@@ -16,6 +16,8 @@
 #include "iris_resources.h"
 #include "iris_state.h"
 
+struct llcc_slice_desc;
+
 struct icc_info {
 	const char		*name;
 	u32			bw_min_kbps;
@@ -29,8 +31,6 @@ enum domain_type {
 	ENCODER	= BIT(0),
 	DECODER	= BIT(1),
 };
-
-struct qcom_ubwc_cfg_data;
 
 /**
  * struct iris_core - holds core parameters valid for all instances
@@ -54,9 +54,6 @@ struct qcom_ubwc_cfg_data;
  * @resets: table of iris reset clocks
  * @controller_resets: table of controller reset clocks
  * @iris_platform_data: a structure for platform data
- * @iris_firmware_data: a pointer to the firmware (or HFI) specific data
- * @iris_firmware_desc: a pointer to the firmware-specific descriptive data
- * @ubwc_cfg: UBWC configuration for the platform
  * @state: current state of core
  * @iface_q_table_daddr: device address for interface queue table memory
  * @sfr_daddr: device address for SFR (Sub System Failure Reason) register memory
@@ -70,7 +67,8 @@ struct qcom_ubwc_cfg_data;
  * @header_id: id of packet header
  * @packet_id: id of packet
  * @power: a structure for clock and bw information
- * @hfi_sys_ops: iris HFI system ops
+ * @hfi_ops: iris hfi command ops
+ * @hfi_response_ops: iris hfi response ops
  * @core_init_done: structure of signal completion for system response
  * @intr_status: interrupt status
  * @sys_error_handler: a delayed work for handling system fatal error
@@ -99,9 +97,6 @@ struct iris_core {
 	struct reset_control_bulk_data		*resets;
 	struct reset_control_bulk_data		*controller_resets;
 	const struct iris_platform_data		*iris_platform_data;
-	const struct iris_firmware_data		*iris_firmware_data;
-	const struct iris_firmware_desc		*iris_firmware_desc;
-	const struct qcom_ubwc_cfg_data		*ubwc_cfg;
 	enum iris_core_state			state;
 	dma_addr_t				iface_q_table_daddr;
 	dma_addr_t				sfr_daddr;
@@ -115,11 +110,16 @@ struct iris_core {
 	u32					header_id;
 	u32					packet_id;
 	struct iris_core_power			power;
-	const struct iris_hfi_sys_ops		*hfi_sys_ops;
+	const struct iris_hfi_command_ops	*hfi_ops;
+	const struct iris_hfi_response_ops	*hfi_response_ops;
 	struct completion			core_init_done;
 	u32					intr_status;
 	struct delayed_work			sys_error_handler;
+	struct delayed_work			wake_restart;
 	struct list_head			instances;
+	struct llcc_slice_desc			*llcc_slices[2];
+	bool					llcc_active;
+	bool					syscache_set;
 	/* encoder and decoder have overlapping caps, so two different arrays are required */
 	struct platform_inst_fw_cap		inst_fw_caps_dec[INST_FW_CAP_MAX];
 	struct platform_inst_fw_cap		inst_fw_caps_enc[INST_FW_CAP_MAX];
@@ -127,5 +127,6 @@ struct iris_core {
 
 int iris_core_init(struct iris_core *core);
 void iris_core_deinit(struct iris_core *core);
+void iris_wake_restart_worker(struct work_struct *work);
 
 #endif

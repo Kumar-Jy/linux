@@ -13,6 +13,10 @@ int iris_vb2_buffer_to_driver(struct vb2_buffer *vb2, struct iris_buffer *buf);
 void iris_set_ts_metadata(struct iris_inst *inst, struct vb2_v4l2_buffer *vbuf);
 int iris_process_streamon_input(struct iris_inst *inst);
 int iris_process_streamon_output(struct iris_inst *inst);
+int iris_hfi_session_open(struct iris_inst *inst);
+int iris_hfi_session_close(struct iris_inst *inst);
+int iris_reserve_core_load(struct iris_inst *inst, u32 frame_rate);
+void iris_release_core_load(struct iris_inst *inst);
 int iris_session_streamoff(struct iris_inst *inst, u32 plane);
 
 #endif

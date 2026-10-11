@@ -3,21 +3,28 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include "iris_core.h"
 #include "iris_ctrls.h"
 #include "iris_platform_common.h"
+#include "iris_resources.h"
 #include "iris_hfi_gen1.h"
 #include "iris_hfi_gen1_defines.h"
-#include "iris_vpu_buffer.h"
+#include "iris_vpu_common.h"
 
 #define BITRATE_MIN		32000
 #define BITRATE_MAX		160000000
+#define BITRATE_PEAK_DEFAULT	(BITRATE_DEFAULT * 2)
 #define BITRATE_STEP		100
+
+#define SM8150_MAX_CORE_MBPS	(((3840 * 2176) / 256) * 120)
 
 static struct platform_inst_fw_cap inst_fw_cap_sm8250_dec[] = {
 	{
 		.cap_id = PIPE,
-		/* .max, .min and .value are set via platform data */
+		.min = PIPE_1,
+		.max = PIPE_4,
 		.step_or_mask = 1,
+		.value = PIPE_4,
 		.hfi_id = HFI_PROPERTY_PARAM_WORK_ROUTE,
 		.set = iris_set_pipe,
 	},
@@ -32,7 +39,28 @@ static struct platform_inst_fw_cap inst_fw_cap_sm8250_dec[] = {
 	},
 };
 
-static const struct platform_inst_fw_cap inst_fw_cap_sm8250_enc[] = {
+static struct platform_inst_fw_cap inst_fw_cap_sm8150_dec[] = {
+	{
+		.cap_id = PIPE,
+		.min = PIPE_1,
+		.max = PIPE_2,
+		.step_or_mask = 1,
+		.value = PIPE_2,
+		.hfi_id = HFI_PROPERTY_PARAM_WORK_ROUTE,
+		.set = iris_set_pipe,
+	},
+	{
+		.cap_id = STAGE,
+		.min = STAGE_1,
+		.max = STAGE_2,
+		.step_or_mask = 1,
+		.value = STAGE_2,
+		.hfi_id = HFI_PROPERTY_PARAM_WORK_MODE,
+		.set = iris_set_stage,
+	},
+};
+
+static struct platform_inst_fw_cap inst_fw_cap_sm8250_enc[] = {
 	{
 		.cap_id = STAGE,
 		.min = STAGE_1,
@@ -136,7 +164,7 @@ static const struct platform_inst_fw_cap inst_fw_cap_sm8250_enc[] = {
 		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
 		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
 			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
+		.set = iris_set_bitrate,
 	},
 	{
 		.cap_id = BITRATE_MODE,
@@ -172,8 +200,7 @@ static const struct platform_inst_fw_cap inst_fw_cap_sm8250_enc[] = {
 		.step_or_mask = 1,
 		.value = 30,
 		.hfi_id = HFI_PROPERTY_CONFIG_VENC_INTRA_PERIOD,
-		.flags = CAP_FLAG_OUTPUT_PORT,
-		.set = iris_set_intra_period,
+		.set = iris_set_gop_size_gen1,
 	},
 	{
 		.cap_id = ENTROPY_MODE,
@@ -226,155 +253,95 @@ static const struct platform_inst_fw_cap inst_fw_cap_sm8250_enc[] = {
 		.flags = CAP_FLAG_OUTPUT_PORT,
 		.set = iris_set_qp_range,
 	},
-	{
-		.cap_id = IR_TYPE,
-		.min = V4L2_CID_MPEG_VIDEO_INTRA_REFRESH_PERIOD_TYPE_RANDOM,
-		.max = V4L2_CID_MPEG_VIDEO_INTRA_REFRESH_PERIOD_TYPE_CYCLIC,
-		.step_or_mask = BIT(V4L2_CID_MPEG_VIDEO_INTRA_REFRESH_PERIOD_TYPE_RANDOM) |
-			BIT(V4L2_CID_MPEG_VIDEO_INTRA_REFRESH_PERIOD_TYPE_CYCLIC),
-		.value = V4L2_CID_MPEG_VIDEO_INTRA_REFRESH_PERIOD_TYPE_RANDOM,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_MENU,
-	},
-	{
-		.cap_id = IR_PERIOD,
-		.min = 0,
-		.max = ((4096 * 2304) >> 8),
-		.step_or_mask = 1,
-		.value = 0,
-		.hfi_id = HFI_PROPERTY_PARAM_VENC_INTRA_REFRESH,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_ir_period_gen1,
-	},
-	{
-		.cap_id = LTR_COUNT,
-		.min = 0,
-		.max = MAX_LTR_FRAME_COUNT_GEN1,
-		.step_or_mask = 1,
-		.value = 0,
-		.hfi_id = HFI_PROPERTY_PARAM_VENC_LTRMODE,
-		.flags = CAP_FLAG_OUTPUT_PORT,
-		.set = iris_set_ltr_count_gen1,
-	},
-	{
-		.cap_id = USE_LTR,
-		.min = 0,
-		.max = ((1 << MAX_LTR_FRAME_COUNT_GEN1) - 1),
-		.step_or_mask = 0,
-		.value = 0,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_USELTRFRAME,
-		.flags = CAP_FLAG_INPUT_PORT | CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_use_ltr,
-	},
-	{
-		.cap_id = MARK_LTR,
-		.min = 0,
-		.max = (MAX_LTR_FRAME_COUNT_GEN1 - 1),
-		.step_or_mask = 1,
-		.value = 0,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_MARKLTRFRAME,
-		.flags = CAP_FLAG_INPUT_PORT | CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_mark_ltr,
-	},
-	{
-		.cap_id = B_FRAME,
-		.min = 0,
-		.max = 3,
-		.step_or_mask = 1,
-		.value = 0,
-		.flags = CAP_FLAG_OUTPUT_PORT,
-	},
-	{
-		.cap_id = LAYER_ENABLE,
-		.min = 0,
-		.max = 1,
-		.step_or_mask = 1,
-		.value = 0,
-		.flags = CAP_FLAG_OUTPUT_PORT,
-	},
-	{
-		.cap_id = LAYER_TYPE_H264,
-		.min = V4L2_MPEG_VIDEO_H264_HIERARCHICAL_CODING_P,
-		.max = V4L2_MPEG_VIDEO_H264_HIERARCHICAL_CODING_P,
-		.step_or_mask = BIT(V4L2_MPEG_VIDEO_H264_HIERARCHICAL_CODING_P),
-		.value = V4L2_MPEG_VIDEO_H264_HIERARCHICAL_CODING_P,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_MENU,
-	},
-	{
-		.cap_id = LAYER_COUNT_H264,
-		.min = 0,
-		.max = MAX_HIER_CODING_LAYER_GEN1,
-		.step_or_mask = 1,
-		.value = 0,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_HIER_P_ENH_LAYER,
-		.flags = CAP_FLAG_OUTPUT_PORT,
-		.set = iris_set_layer_count_gen1,
-	},
-	{
-		.cap_id = LAYER0_BITRATE_H264,
-		.min = 1,
-		.max = BITRATE_MAX,
-		.step_or_mask = 1,
-		.value = BITRATE_DEFAULT,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
-			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
-	},
-	{
-		.cap_id = LAYER1_BITRATE_H264,
-		.min = 1,
-		.max = BITRATE_MAX,
-		.step_or_mask = 1,
-		.value = BITRATE_DEFAULT,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
-			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
-	},
-	{
-		.cap_id = LAYER2_BITRATE_H264,
-		.min = 1,
-		.max = BITRATE_MAX,
-		.step_or_mask = 1,
-		.value = BITRATE_DEFAULT,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
-			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
-	},
-	{
-		.cap_id = LAYER3_BITRATE_H264,
-		.min = 1,
-		.max = BITRATE_MAX,
-		.step_or_mask = 1,
-		.value = BITRATE_DEFAULT,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
-			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
-	},
-	{
-		.cap_id = LAYER4_BITRATE_H264,
-		.min = 1,
-		.max = BITRATE_MAX,
-		.step_or_mask = 1,
-		.value = BITRATE_DEFAULT,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
-			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
-	},
-	{
-		.cap_id = LAYER5_BITRATE_H264,
-		.min = 1,
-		.max = BITRATE_MAX,
-		.step_or_mask = 1,
-		.value = BITRATE_DEFAULT,
-		.hfi_id = HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE,
-		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_INPUT_PORT |
-			CAP_FLAG_DYNAMIC_ALLOWED,
-		.set = iris_set_bitrate_gen1,
-	},
+};
+
+static struct platform_inst_caps platform_inst_cap_sm8250 = {
+	.min_frame_width = 128,
+	.max_frame_width = 8192,
+	.min_frame_height = 128,
+	.max_frame_height = 8192,
+	.max_mbpf = 138240,
+	.mb_cycles_vsp = 25,
+	.mb_cycles_vpp = 200,
+	.max_frame_rate = MAXIMUM_FPS,
+	.max_operating_rate = MAXIMUM_FPS,
+};
+
+static struct platform_inst_caps platform_inst_cap_sm8150 = {
+	/* Iris1 uses the HFI 4xx (Venus v4) decoder allocation limits. */
+	.min_frame_width = 96,
+	.max_frame_width = 8192,
+	.min_frame_height = 96,
+	.max_frame_height = 8192,
+	.max_mbpf = 138240,
+	.mb_cycles_vsp = 10,
+	.mb_cycles_vpp = 200,
+	.max_frame_rate = MAXIMUM_FPS,
+	.max_operating_rate = MAXIMUM_FPS,
+};
+
+static void iris_set_sm8250_preset_registers(struct iris_core *core)
+{
+	writel(0x0, core->reg_base + 0xB0088);
+}
+
+static void iris_set_sm8150_preset_registers(struct iris_core *core)
+{
+	/*
+	 * Iris1 requires both controller clock-gating registers to be cleared
+	 * after the clocks are enabled.  This is the sequence used by the
+	 * Qualcomm SM8150 downstream driver and the legacy Venus driver.
+	 */
+	writel(0, core->reg_base + 0xE2010);
+	writel(0, core->reg_base + 0xE2000);
+}
+
+static const struct icc_info sm8250_icc_table[] = {
+	{ "cpu-cfg",    1000, 1000     },
+	{ "video-mem",  1000, 15000000 },
+};
+
+static const char * const sm8250_clk_reset_table[] = { "bus", "core" };
+static const char * const sm8150_clk_reset_table[] = {
+	"bus", "core", "vcodec0_bus", "vcodec1_bus"
+};
+
+static const struct bw_info sm8250_bw_table_dec[] = {
+	{ ((4096 * 2160) / 256) * 60, 2403000 },
+	{ ((4096 * 2160) / 256) * 30, 1224000 },
+	{ ((1920 * 1080) / 256) * 60,  812000 },
+	{ ((1920 * 1080) / 256) * 30,  416000 },
+};
+
+static const char * const sm8250_pmdomain_table[] = { "venus", "vcodec0" };
+static const char * const sm8150_pmdomain_table[] = {
+	"venus", "vcodec0", "vcodec1"
+};
+
+static const char * const sm8250_opp_pd_table[] = { "mx" };
+static const char * const sm8150_opp_pd_table[] = { "cx" };
+
+static const struct platform_clk_data sm8250_clk_table[] = {
+	{IRIS_AXI_CLK,  "iface"        },
+	{IRIS_CTRL_CLK, "core"         },
+	{IRIS_HW_CLK,   "vcodec0_core" },
+};
+
+static const struct platform_clk_data sm8150_clk_table[] = {
+	{IRIS_AXI_CLK,  "iface"        },
+	{IRIS_BUS_CLK,  "bus"          },
+	{IRIS_CTRL_CLK, "core"         },
+	{IRIS_HW_AXI_CLK, "vcodec0_bus" },
+	{IRIS_HW_CLK,   "vcodec0_core" },
+	{IRIS_AUX_HW_AXI_CLK, "vcodec1_bus" },
+	{IRIS_AUX_HW_CLK, "vcodec1_core" },
+};
+
+static struct tz_cp_config tz_cp_config_sm8250 = {
+	.cp_start = 0,
+	.cp_size = 0x25800000,
+	.cp_nonpixel_start = 0x01000000,
+	.cp_nonpixel_size = 0x24800000,
 };
 
 static const u32 sm8250_vdec_input_config_param_default[] = {
@@ -411,14 +378,39 @@ static const u32 sm8250_enc_ip_int_buf_tbl[] = {
 	BUF_SCRATCH_2,
 };
 
-const struct iris_firmware_data iris_hfi_gen1_data = {
-	.init_hfi_ops = &iris_hfi_gen1_sys_ops_init,
-
+struct iris_platform_data sm8250_data = {
+	.get_instance = iris_hfi_gen1_get_instance,
+	.init_hfi_command_ops = &iris_hfi_gen1_command_ops_init,
+	.init_hfi_response_ops = iris_hfi_gen1_response_ops_init,
+	.vpu_ops = &iris_vpu2_ops,
+	.set_preset_registers = iris_set_sm8250_preset_registers,
+	.icc_tbl = sm8250_icc_table,
+	.icc_tbl_size = ARRAY_SIZE(sm8250_icc_table),
+	.clk_rst_tbl = sm8250_clk_reset_table,
+	.clk_rst_tbl_size = ARRAY_SIZE(sm8250_clk_reset_table),
+	.bw_tbl_dec = sm8250_bw_table_dec,
+	.bw_tbl_dec_size = ARRAY_SIZE(sm8250_bw_table_dec),
+	.pmdomain_tbl = sm8250_pmdomain_table,
+	.pmdomain_tbl_size = ARRAY_SIZE(sm8250_pmdomain_table),
+	.opp_pd_tbl = sm8250_opp_pd_table,
+	.opp_pd_tbl_size = ARRAY_SIZE(sm8250_opp_pd_table),
+	.clk_tbl = sm8250_clk_table,
+	.clk_tbl_size = ARRAY_SIZE(sm8250_clk_table),
+	/* Upper bound of DMA address range */
+	.dma_mask = 0xe0000000 - 1,
+	.fwname = "qcom/vpu-1.0/venus.mbn",
+	.pas_id = IRIS_PAS_ID,
+	.inst_caps = &platform_inst_cap_sm8250,
 	.inst_fw_caps_dec = inst_fw_cap_sm8250_dec,
 	.inst_fw_caps_dec_size = ARRAY_SIZE(inst_fw_cap_sm8250_dec),
 	.inst_fw_caps_enc = inst_fw_cap_sm8250_enc,
 	.inst_fw_caps_enc_size = ARRAY_SIZE(inst_fw_cap_sm8250_enc),
-
+	.tz_cp_config_data = &tz_cp_config_sm8250,
+	.hw_response_timeout = HW_RESPONSE_TIMEOUT_VALUE,
+	.num_vpp_pipe = 4,
+	.max_session_count = 16,
+	.max_core_mbpf = NUM_MBS_8K,
+	.max_core_mbps = ((7680 * 4320) / 256) * 60,
 	.dec_input_config_params_default =
 		sm8250_vdec_input_config_param_default,
 	.dec_input_config_params_default_size =
@@ -432,6 +424,61 @@ const struct iris_firmware_data iris_hfi_gen1_data = {
 	.dec_op_int_buf_tbl = sm8250_dec_op_int_buf_tbl,
 	.dec_op_int_buf_tbl_size = ARRAY_SIZE(sm8250_dec_op_int_buf_tbl),
 
+	.enc_ip_int_buf_tbl = sm8250_enc_ip_int_buf_tbl,
+	.enc_ip_int_buf_tbl_size = ARRAY_SIZE(sm8250_enc_ip_int_buf_tbl),
+};
+
+/*
+ * SM8150 uses HFI Gen1 with the legacy VPU5 register layout, has two VPP
+ * pipes and votes the CX performance domain.  The nabu DT supplies its
+ * board firmware path through firmware-name.
+ */
+struct iris_platform_data sm8150_data = {
+	.get_instance = iris_hfi_gen1_get_instance,
+	.init_hfi_command_ops = &iris_hfi_gen1_command_ops_init,
+	.init_hfi_response_ops = iris_hfi_gen1_response_ops_init,
+	.vpu_ops = &iris_vpu2_ops,
+	.set_preset_registers = iris_set_sm8150_preset_registers,
+	.icc_tbl = sm8250_icc_table,
+	.icc_tbl_size = ARRAY_SIZE(sm8250_icc_table),
+	.clk_rst_tbl = sm8150_clk_reset_table,
+	.clk_rst_tbl_size = ARRAY_SIZE(sm8150_clk_reset_table),
+	.bw_tbl_dec = sm8250_bw_table_dec,
+	.bw_tbl_dec_size = ARRAY_SIZE(sm8250_bw_table_dec),
+	.pmdomain_tbl = sm8150_pmdomain_table,
+	.pmdomain_tbl_size = ARRAY_SIZE(sm8150_pmdomain_table),
+	.opp_pd_tbl = sm8150_opp_pd_table,
+	.opp_pd_tbl_size = ARRAY_SIZE(sm8150_opp_pd_table),
+	.clk_tbl = sm8150_clk_table,
+	.clk_tbl_size = ARRAY_SIZE(sm8150_clk_table),
+	.dma_mask = 0xe0000000 - 1,
+	.fwname = "qcom/sm8150/xiaomi/nabu/venus.mbn",
+	.pas_id = IRIS_PAS_ID,
+	.inst_caps = &platform_inst_cap_sm8150,
+	.inst_fw_caps_dec = inst_fw_cap_sm8150_dec,
+	.inst_fw_caps_dec_size = ARRAY_SIZE(inst_fw_cap_sm8150_dec),
+	.inst_fw_caps_enc = inst_fw_cap_sm8250_enc,
+	.inst_fw_caps_enc_size = ARRAY_SIZE(inst_fw_cap_sm8250_enc),
+	.tz_cp_config_data = &tz_cp_config_sm8250,
+	.use_vcodec_hw_control = true,
+	.defer_vcodec_power = true,
+	.legacy_vpu5 = true,
+	.hw_response_timeout = HW_RESPONSE_TIMEOUT_VALUE,
+	.num_vpp_pipe = 2,
+	.max_session_count = 16,
+	.max_core_mbpf = NUM_MBS_8K,
+	.max_core_mbps = SM8150_MAX_CORE_MBPS,
+	.dec_input_config_params_default =
+		sm8250_vdec_input_config_param_default,
+	.dec_input_config_params_default_size =
+		ARRAY_SIZE(sm8250_vdec_input_config_param_default),
+	.enc_input_config_params = sm8250_venc_input_config_param,
+	.enc_input_config_params_size =
+		ARRAY_SIZE(sm8250_venc_input_config_param),
+	.dec_ip_int_buf_tbl = sm8250_dec_ip_int_buf_tbl,
+	.dec_ip_int_buf_tbl_size = ARRAY_SIZE(sm8250_dec_ip_int_buf_tbl),
+	.dec_op_int_buf_tbl = sm8250_dec_op_int_buf_tbl,
+	.dec_op_int_buf_tbl_size = ARRAY_SIZE(sm8250_dec_op_int_buf_tbl),
 	.enc_ip_int_buf_tbl = sm8250_enc_ip_int_buf_tbl,
 	.enc_ip_int_buf_tbl_size = ARRAY_SIZE(sm8250_enc_ip_int_buf_tbl),
 };

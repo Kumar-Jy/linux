@@ -17,6 +17,7 @@
 #include <linux/platform_device.h>
 #include <linux/reboot.h>
 #include <linux/regmap.h>
+#include <linux/suspend.h>
 
 #define PON_REV2			0x01
 
@@ -151,6 +152,15 @@ static irqreturn_t pm8941_pwrkey_irq(int irq, void *_data)
 	struct pm8941_pwrkey *pwrkey = _data;
 	unsigned int sts;
 	int err;
+
+	/*
+	 * Drop the Nabu-opted phantom edge arriving during the s2idle transition
+	 * so no spurious KEY_POWER event reaches
+	 * userspace -- logind cannot tell those apart from a real press and
+	 * would act on them while the system is supposed to stay asleep.
+	 */
+	if (pm_s2idle_grace_ignore_wakeup_irq(irq))
+		return IRQ_HANDLED;
 
 	if (pwrkey->sw_debounce_time_us) {
 		if (ktime_before(ktime_get(), pwrkey->sw_debounce_end_time)) {
@@ -409,12 +419,19 @@ static int pm8941_pwrkey_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, pwrkey);
 	device_init_wakeup(&pdev->dev, wakeup);
 
+	/* Nabu's PMIC line glitches once while entering s2idle. */
+	if (of_property_read_bool(pdev->dev.of_node, "qcom,s2idle-wake-grace"))
+		pm_s2idle_set_wake_irq(pwrkey->irq);
+
 	return 0;
 }
 
 static void pm8941_pwrkey_remove(struct platform_device *pdev)
 {
 	struct pm8941_pwrkey *pwrkey = platform_get_drvdata(pdev);
+
+	if (of_property_read_bool(pdev->dev.of_node, "qcom,s2idle-wake-grace"))
+		pm_s2idle_set_wake_irq(-1);
 
 	if (pwrkey->data->supports_ps_hold_poff_config)
 		unregister_reboot_notifier(&pwrkey->reboot_notifier);

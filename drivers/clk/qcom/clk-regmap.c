@@ -5,6 +5,7 @@
 
 #include <linux/device.h>
 #include <linux/clk-provider.h>
+#include <linux/delay.h>
 #include <linux/regmap.h>
 #include <linux/export.h>
 
@@ -55,6 +56,8 @@ int clk_enable_regmap(struct clk_hw *hw)
 	else
 		val = rclk->enable_mask;
 
+	udelay(2500);
+
 	return regmap_update_bits(rclk->regmap, rclk->enable_reg,
 				  rclk->enable_mask, val);
 }
@@ -78,6 +81,8 @@ void clk_disable_regmap(struct clk_hw *hw)
 		val = rclk->enable_mask;
 	else
 		val = 0;
+
+	udelay(2500);
 
 	regmap_update_bits(rclk->regmap, rclk->enable_reg, rclk->enable_mask,
 			   val);

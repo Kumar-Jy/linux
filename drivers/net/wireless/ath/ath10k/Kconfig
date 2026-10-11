@@ -6,6 +6,7 @@ config ATH10K
 	select CRC32
 	select WANT_DEV_COREDUMP
 	select ATH10K_CE
+	select CRYPTO_SHA256
 	help
 	  This module adds support for wireless adapters based on
 	  Atheros IEEE 802.11ac family of chipsets.

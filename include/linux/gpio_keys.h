@@ -3,6 +3,7 @@
 #define _GPIO_KEYS_H
 
 #include <linux/types.h>
+#include <linux/notifier.h>
 
 struct device;
 
@@ -19,6 +20,7 @@ struct device;
  * @debounce_interval:	debounce ticks interval in msecs
  * @can_disable:	%true indicates that userspace is allowed to
  *			disable button via sysfs
+ * @enable_notify_chain:	%true enables firing a kernel notifier on switch events
  * @value:		axis value for %EV_ABS
  * @irq:		Irq number in case of interrupt keys
  * @wakeirq:		Optional dedicated wake-up interrupt
@@ -33,6 +35,7 @@ struct gpio_keys_button {
 	int wakeup_event_action;
 	int debounce_interval;
 	bool can_disable;
+	bool enable_notify_chain;
 	int value;
 	unsigned int irq;
 	unsigned int wakeirq;
@@ -58,5 +61,8 @@ struct gpio_keys_platform_data {
 	void (*disable)(struct device *dev);
 	const char *name;
 };
+
+int gpio_keys_lid_notifier_register(struct notifier_block *nb);
+int gpio_keys_lid_notifier_unregister(struct notifier_block *nb);
 
 #endif

@@ -15,20 +15,15 @@
 #define DEFAULT_WIDTH 320
 #define DEFAULT_HEIGHT 240
 
-struct iris_hfi_session_ops;
-
-enum iris_fmt_type_out {
+enum iris_fmt_type {
 	IRIS_FMT_H264,
 	IRIS_FMT_HEVC,
 	IRIS_FMT_VP9,
-	IRIS_FMT_AV1,
 };
 
-enum iris_fmt_type_cap {
-	IRIS_FMT_NV12,
-	IRIS_FMT_QC08C,
-	IRIS_FMT_TP10,
-	IRIS_FMT_QC10C,
+struct iris_fmt {
+	u32 pixfmt;
+	u32 type;
 };
 
 /**
@@ -37,7 +32,6 @@ enum iris_fmt_type_cap {
  * @list: used for attach an instance to the core
  * @core: pointer to core structure
  * @session_id: id of current video session
- * @hfi_session_ops: iris HFI session ops
  * @ctx_q_lock: lock to serialize queues related ioctls
  * @lock: lock to seralise forward and reverse threads
  * @fh: reference of v4l2 file handler
@@ -55,7 +49,11 @@ enum iris_fmt_type_cap {
  * @fw_min_count: minimnum count of buffers needed by fw
  * @state: instance state
  * @sub_state: instance sub state
- * @once_per_session_set: boolean to set once per session property
+ * @hfi_session_opened: whether this instance owns an active firmware session
+ * @hfi_core_id: video core mask assigned to this firmware session
+ * @core_load_reserved: whether this instance owns an aggregate throughput slot
+ * @core_load_rejected: whether this active session already failed admission
+ * @admission_frame_rate: frame rate used for aggregate throughput admission
  * @max_input_data_size: max size of input data
  * @power: structure of power info
  * @icc_data: structure of interconnect data
@@ -67,24 +65,37 @@ enum iris_fmt_type_cap {
  * @metadata_idx: index for metadata buffer
  * @codec: codec type
  * @last_buffer_dequeued: a flag to indicate that last buffer is sent by driver
- * @last_buf_ns: start time of received input buffer for current one second FPS window
- * @frame_counter: input buffer counter for current one second FPS window
- * @frame_rate: frame rate of current instance
- * @operating_rate: operating rate of current instance
+ * @last_buf_ns: start time of the current one-second input-rate window
+ * @rate_min_timestamp: lowest input timestamp in the current rate window
+ * @rate_max_timestamp: highest input timestamp in the current rate window
+ * @frame_counter: input buffer counter for the current rate window
+ * @frame_rate: measured input rate used for clock and interconnect votes
+ * @frame_rate_down_count: consecutive lower-rate windows before reducing votes
+ * @operating_rate: requested operating rate for the encoder
+ * @streamoff_pending: a vb2 STREAMOFF is flushing or stopping this session
+ * @start_streaming_rollback_type: queue whose failed STREAMON is being rolled back
+ * @last_input_timestamp: most recent compressed-input timestamp
+ * @seek_timestamp: first compressed-input timestamp after a discontinuity
+ * @input_timestamp_valid: whether last_input_timestamp has been initialized
+ * @seek_timestamp_pending: discard old-epoch output until seek_timestamp arrives
+ * @corrupt_output_drops: consecutive corrupt legacy output frames recycled
+ * @pending_output: legacy output held to filter stale or hidden VP9 frames
+ * @seek_hold_frames: output frames held after a seek before resuming in-place delivery
+ * @display_delay: requested firmware display delay
+ * @display_delay_enable: whether the requested display delay is active
+ * @surface_fences: pending CPU-write fences attached to exported surfaces
+ * @surface_fence_context: dma_fence context for this decoder instance
+ * @surface_fence_seqno: last allocated surface-fence sequence number
+ * @vp9_iova_hole_vaddr:  kernel mapping of the high-IOVA placeholder reservation
+ * @vp9_iova_hole_daddr:  IOVA at which the placeholder was mapped
+ * @vp9_iova_hole_size:  size of the placeholder reservation (0 when not held)
  * @hfi_rc_type: rate control type
- * @enc_raw_width: source image width for encoder instance
- * @enc_raw_height: source image height for encoder instance
- * @enc_scale_width: scale width for encoder instance
- * @enc_scale_height: scale height for encoder instance
- * @hfi_layer_type: hierarchical coding layer type
- * @hfi_layer_count: hierarchical coding layer count
  */
 
 struct iris_inst {
 	struct list_head		list;
 	struct iris_core		*core;
 	u32				session_id;
-	const struct iris_hfi_session_ops	*hfi_session_ops;
 	struct mutex			ctx_q_lock;/* lock to serialize queues related ioctls */
 	struct mutex			lock; /* lock to serialize forward and reverse threads */
 	struct v4l2_fh			fh;
@@ -99,10 +110,16 @@ struct iris_inst {
 	u32				flush_responses_pending;
 	struct platform_inst_fw_cap	fw_caps[INST_FW_CAP_MAX];
 	struct iris_buffers		buffers[BUF_TYPE_MAX];
+	u32				fw_buffer_sizes[BUF_TYPE_MAX];
+	bool				capture_format_changed;
 	u32				fw_min_count;
 	enum iris_inst_state		state;
 	enum iris_inst_sub_state	sub_state;
-	bool				once_per_session_set;
+	bool				hfi_session_opened;
+	u32				hfi_core_id;
+	bool				core_load_reserved;
+	bool				core_load_rejected;
+	u32				admission_frame_rate;
 	size_t				max_input_data_size;
 	struct iris_inst_power		power;
 	struct icc_vote_data		icc_data;
@@ -115,16 +132,30 @@ struct iris_inst {
 	u32				codec;
 	bool				last_buffer_dequeued;
 	u64				last_buf_ns;
+	u64				rate_min_timestamp;
+	u64				rate_max_timestamp;
 	u32				frame_counter;
 	u32				frame_rate;
+	u32				frame_rate_down_count;
 	u32				operating_rate;
+	bool				streamoff_pending;
+	u32				start_streaming_rollback_type;
+	u64				last_input_timestamp;
+	u64				seek_timestamp;
+	bool				input_timestamp_valid;
+	bool				seek_timestamp_pending;
+	u32				corrupt_output_drops;
+	struct iris_buffer		*pending_output;
+	u32				seek_hold_frames;
+	u32				display_delay;
+	bool				display_delay_enable;
+	struct list_head		surface_fences;
+	u64				surface_fence_context;
+	u64				surface_fence_seqno;
+	void				*vp9_iova_hole_vaddr;
+	dma_addr_t			vp9_iova_hole_daddr;
+	size_t				vp9_iova_hole_size;
 	u32				hfi_rc_type;
-	u32				enc_raw_width;
-	u32				enc_raw_height;
-	u32				enc_scale_width;
-	u32				enc_scale_height;
-	u32				hfi_layer_type;
-	u32				hfi_layer_count;
 };
 
 #endif

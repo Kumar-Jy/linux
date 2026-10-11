@@ -203,6 +203,28 @@ static void psci_idle_init_syscore(void)
 		register_syscore(&psci_idle_syscore);
 }
 
+/*
+ * After syscore_suspend() has driven the cluster genpd to OFF (via
+ * psci_idle_syscore_suspend() above), psci_pd_power_off() stamps the
+ * cluster's PSCI suspend parameter into this CPU's psci_domain_state slot.
+ * The PM_SUSPEND_MEM backend reads it back here to know what state to
+ * pass to psci_cpu_suspend_enter() from its .enter() callback.
+ *
+ * Returns 0 if nothing was stamped (e.g. cluster genpd is still on, or the
+ * hierarchical topology was not built).
+ */
+u32 psci_idle_suspend_param(void)
+{
+	return this_cpu_read(psci_domain_state.state);
+}
+EXPORT_SYMBOL_GPL(psci_idle_suspend_param);
+
+bool psci_cpuidle_uses_syscore(void)
+{
+	return psci_cpuidle_use_syscore;
+}
+EXPORT_SYMBOL_GPL(psci_cpuidle_uses_syscore);
+
 static void psci_idle_init_cpuhp(void)
 {
 	int err;

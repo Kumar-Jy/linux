@@ -695,15 +695,22 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return dev_err_probe(dev, ret, "Unable to get iface clk\n");
 
+	ret = pm_runtime_resume_and_get(dev);
+	if (ret)
+		return ret;
+
 	if (phy->cfg->ops.pll_init) {
 		ret = phy->cfg->ops.pll_init(phy);
-		if (ret)
+		if (ret) {
+			pm_runtime_put(dev);
 			return dev_err_probe(dev, ret,
 					     "PLL init failed; need separate clk driver\n");
+		}
 	}
 
 	ret = devm_of_clk_add_hw_provider(dev, of_clk_hw_onecell_get,
 				     phy->provided_clocks);
+	pm_runtime_put(dev);
 	if (ret)
 		return dev_err_probe(dev, ret,
 				     "Failed to register clk provider\n");
