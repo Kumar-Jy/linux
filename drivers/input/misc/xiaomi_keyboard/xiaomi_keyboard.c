@@ -557,6 +557,14 @@ static int xiaomi_keyboard_probe(struct platform_device *pdev)
 		goto err_lid_notif_unreg;
 	}
 
+	/*
+	 * Apply the initial power state now, so the keyboard MCU is up and
+	 * enumerated well before the first system suspend. Otherwise it powers
+	 * on during the screen-blank that precedes suspend and its freshly
+	 * armed wake IRQ fires, aborting s2idle.
+	 */
+	schedule_work(&mdata->state_work);
+
 	return ret;
 
 err_lid_notif_unreg:
