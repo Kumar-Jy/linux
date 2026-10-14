@@ -348,9 +348,14 @@ static void idtp9418_hall_irq_work(struct work_struct *work)
 		   !gpiod_get_value(di->hall4_gpiod);
 	di->is_attached = attached;
 
-	if (!attached)
+	if (!attached) {
+		dev_info(di->dev, "Pen detached! Turning off reverse charging...\n");
+		idtp9418_reverse_stop(di);
+		idtp9418_push_event(di, IDTP9418_STATE_COMPLETE);
 		goto out;
+	}
 
+	dev_info(di->dev, "Pen attached! Starting reverse wireless charging...\n");
 	idtp9418_set_reverse_gpio(di, true);
 	idtp9418_reverse_charge_enable(di);
 	idtp9418_push_event(di, IDTP9418_STATE_ATTACHING);
@@ -704,7 +709,10 @@ static int idtp9418_probe(struct i2c_client *client)
 		goto cleanup;
 	}
 
-	dev_info(di->dev, "idtp9418 probe success\n");
+	/* Boot dock auto-detection: start charging if pen is already attached at boot */
+	schedule_delayed_work(&di->hall_irq_work, msecs_to_jiffies(500));
+
+	dev_info(di->dev, "idtp9418 probe success (with /dev/idtp9418)\n");
 	return 0;
 
 cleanup:
@@ -720,6 +728,8 @@ static void idtp9418_remove(struct i2c_client *client)
 	misc_deregister(&idtp9418_miscdev);
 	idtp9418_global_di = NULL;
 	idtp9418_cancel_works(di);
+	alarm_cancel(&di->reverse_dping_alarm);
+	alarm_cancel(&di->reverse_chg_alarm);
 	kfifo_free(&di->kfifo);
 }
 
@@ -732,6 +742,7 @@ static const struct of_device_id idt_match_table[] = {
 	{ .compatible = "idt,p9418" },
 	{}
 };
+MODULE_DEVICE_TABLE(of, idt_match_table);
 MODULE_DEVICE_TABLE(i2c, idtp9418_id);
 
 static struct i2c_driver idtp9418_driver = {

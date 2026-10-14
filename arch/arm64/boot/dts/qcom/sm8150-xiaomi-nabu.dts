@@ -1303,7 +1303,6 @@
 			config {
 				pins = "gpio3";
 				drive-strength = <16>;
-				bias-disable;
 				bias-pull-down;
 				output-low;
 			};
@@ -1319,7 +1318,6 @@
 			config {
 				pins = "gpio3";
 				drive-strength = <16>;
-				bias-disable;
 				bias-pull-down;
 				output-low;
 			};
