@@ -1,0 +1,220 @@
+name: pkgbuild
+
+# Build the kernel package for the branch selected when running the workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: 'Upload the built package to a GitHub Release (tag includes kernel version)'
+        type: boolean
+        default: false
+  push:
+    branches:
+      - 7.2
+      - 7.2-test
+      - 'nabu/**'
+      - 6.18
+      - 6.18-test
+      - 6.18-display-fix
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ github.ref_name }} (${{ matrix.distro }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [arch, ubuntu, fedora]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Resolve package info
+        id: pkg
+        run: |
+          ref="${{ github.ref_name }}"
+          if [[ "$ref" == *"7.2"* || "$ref" == *"72"* ]]; then
+            package="linux-nabu-72"
+          elif [[ "$ref" == *"6.18"* || "$ref" == *"618"* ]]; then
+            package="linux-nabu-618"
+          else
+            package="linux-nabu-614"
+          fi
+          pkgver=$(grep -m1 '^pkgver=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
+          pkgrel=$(grep -m1 '^pkgrel=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "version=${pkgver}-${pkgrel}" >> "$GITHUB_OUTPUT"
+
+      - name: Install tools (Arch)
+        if: matrix.distro == 'arch'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build package (Arch)
+        if: matrix.distro == 'arch'
+        run: |
+          package="${{ steps.pkg.outputs.package }}"
+          branch="${{ github.ref_name }}"
+          mkdir -p pkg-out
+          echo "::group::Building $package (Arch, branch $branch)..."
+          podman run --rm \
+            -v "$(pwd)/packages/$package:/work" \
+            -v "$(pwd)/pkg-out:/output" \
+            -w /work \
+            menci/archlinuxarm:base \
+            sh -c "
+              sed -i '/^#DisableSandbox/s/^#//' /etc/pacman.conf
+              echo 'DisableSandbox' >> /etc/pacman.conf
+              pacman-key --init
+              pacman-key --populate archlinuxarm
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm base-devel git bc python3 xmlto docbook-xsl kmod inetutils dtc systemd-ukify libelf
+              useradd -m builder
+              echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+              chown -R builder:builder /work
+              # Build the branch selected in the UI (never a hardcoded branch).
+              sed -i \"s|git+https://github.com/[^/.]*/[^.]*\.git|git+\${{ github.server_url }}/\${{ github.repository }}.git|\" /work/PKGBUILD
+              sed -i \"s|#branch=[A-Za-z0-9._/-]*|#branch=\$branch|\" /work/PKGBUILD
+              su builder -c 'cd /work && (makepkg -s --noconfirm --skipchecksums || makepkg -d --noconfirm --skipchecksums)' || exit 1
+              cp /work/*.pkg.tar.* /output/
+            "
+          echo "::endgroup::"
+          ls -la pkg-out/
+
+      - name: Install build tools (Ubuntu)
+        if: matrix.distro == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libdw-dev debhelper dpkg-dev device-tree-compiler kmod cpio rsync
+
+      - name: Build package (Ubuntu)
+        if: matrix.distro == 'ubuntu'
+        run: |
+          branch="${{ github.ref_name }}"
+          version="${{ steps.pkg.outputs.version }}"
+          mkdir -p pkg-out
+          echo "::group::Building .deb (Ubuntu, branch $branch)..."
+          export DTC_FLAGS="-@"
+          make ARCH=arm64 nabu_defconfig
+          make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
+          make ARCH=arm64 DPKG_FLAGS="-d" KDEB_PKGVERSION="$version" -j$(nproc) bindeb-pkg
+          find .. -maxdepth 1 -name "*.deb" -exec mv -v {} pkg-out/ \;
+          sudo chmod -R a+r pkg-out/
+          echo "::endgroup::"
+          ls -la pkg-out/
+
+      - name: Install tools (Fedora)
+        if: matrix.distro == 'fedora'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build package (Fedora)
+        if: matrix.distro == 'fedora'
+        run: |
+          branch="${{ github.ref_name }}"
+          mkdir -p pkg-out
+          echo "::group::Building .rpm (Fedora, branch $branch)..."
+          podman run --rm \
+            -v "$(pwd):/work" \
+            -v "$(pwd)/pkg-out:/output" \
+            -w /work \
+            fedora:latest \
+            sh -c "
+              set -e
+              git config --global --add safe.directory /work 2>/dev/null || true
+              dnf install -y --setopt=install_weak_deps=False \
+                gcc make bc bison flex openssl openssl-devel perl perl-devel \
+                elfutils-libelf-devel elfutils-devel dwarves \
+                device-tree-compiler rpm-build kmod cpio git rsync
+              export DTC_FLAGS='-@'
+              make ARCH=arm64 nabu_defconfig
+              make ARCH=arm64 -j\$(nproc) Image Image.gz modules dtbs
+              make ARCH=arm64 RPMOPTS='--nodeps' -j\$(nproc) binrpm-pkg
+              find rpmbuild/RPMS -name '*.rpm' -exec cp -v {} /output/ \; 2>/dev/null || \
+              find / -name 'kernel-*.rpm' -exec cp -v {} /output/ \; 2>/dev/null || true
+              chmod -R a+r /output
+            "
+          echo "::endgroup::"
+          ls -la pkg-out/
+
+      - name: Upload ${{ matrix.distro }} artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pkg-${{ steps.pkg.outputs.package }}-${{ steps.pkg.outputs.version }}-${{ matrix.distro }}
+          path: pkg-out/*
+          if-no-files-found: error
+
+  release:
+    name: Release ${{ github.ref_name }}
+    if: ${{ inputs.upload_release == true }}
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+
+      - name: Create / update GitHub Release
+        run: |
+          set -euo pipefail
+          branch="${{ github.ref_name }}"
+          repo="${{ github.repository }}"
+
+          if [[ "$branch" == *"7.2"* || "$branch" == *"72"* ]]; then
+            package="linux-nabu-72"
+          elif [[ "$branch" == *"6.18"* || "$branch" == *"618"* ]]; then
+            package="linux-nabu-618"
+          else
+            package="linux-nabu-614"
+          fi
+          pkgver=$(grep -m1 '^pkgver=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
+          pkgrel=$(grep -m1 '^pkgrel=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
+          if [ -z "$pkgver" ] || [ -z "$pkgrel" ]; then
+            echo "ERROR: could not read pkgver/pkgrel from packages/$package/PKGBUILD" >&2
+            exit 1
+          fi
+
+          safe_branch="${branch//\//-}"
+          if [ "$branch" = "6.18" ]; then
+            tag="v${pkgver}-${pkgrel}"
+          else
+            tag="v${pkgver}-${pkgrel}-${safe_branch}"
+          fi
+          title="linux-nabu ${pkgver}-${pkgrel}"
+          notes=$(printf 'Built from branch `%s` at commit `%s`.\n\n**Packages:**\n' "$branch" "${{ github.sha }}")
+
+          shopt -s nullglob
+          all=()
+          for d in pkg-*/; do
+            for f in "$d"*; do
+              [[ -f "$f" ]] || continue
+              all+=("$f")
+              notes+=$(printf -- '- `%s`\n' "$(basename "$f")")
+            done
+          done
+          if [ "${#all[@]}" -eq 0 ]; then
+            echo "ERROR: no package files found under pkg-*/" >&2
+            exit 1
+          fi
+
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            echo "::group::Release $tag exists - updating assets and description"
+            gh release upload "$tag" --repo "$repo" --clobber "${all[@]}"
+            gh release edit "$tag" --repo "$repo" --title "$title" --notes "$notes"
+            echo "::endgroup::"
+          else
+            echo "::group::Creating release $tag"
+            gh release create "$tag" --repo "$repo" --title "$title" --notes "$notes" "${all[@]}"
+            echo "::endgroup::"
+          fi
+          gh release view "$tag" --repo "$repo" --json name,url --jq '"[name=\(.name)] url: \(.url)"'

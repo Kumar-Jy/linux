@@ -1,0 +1,154 @@
+name: sync-upstream
+
+# Track Linux-stable updates and open a PR to sync the local branch.
+# - Runs daily (stable releases are ~weekly) and manually on demand.
+# - Fetches the upstream stable ref (default: linux-6.18.y from kernel.org).
+# - If a newer version exists, merges it into a 'sync/upstream-<version>' branch,
+#   bumps pkgver in the PKGBUILD, and opens a PR to the target branch.
+# - Pushes are only to the sync branch - the target branch is never touched.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Local branch to sync (default: 6.18)'
+        type: string
+        default: '6.18'
+      upstream_ref:
+        description: 'Upstream stable ref (default: linux-6.18.y)'
+        type: string
+        default: 'linux-6.18.y'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync ${{ inputs.target_branch || github.ref_name }} with upstream
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: ${{ inputs.target_branch || github.ref_name }}
+      UPSTREAM_REF: ${{ inputs.upstream_ref || 'linux-6.18.y' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.target_branch || github.ref }}
+          fetch-depth: 0
+
+      - name: Fetch upstream stable tree
+        run: |
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+          timeout 600 git fetch upstream "$UPSTREAM_REF"
+          echo "Fetched: $(git log -1 --format='%h %s' FETCH_HEAD)"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          set -euo pipefail
+          version_from() {
+            git show "$1:Makefile" | awk '
+              /^VERSION[[:space:]]*=/     { v=$3 }
+              /^PATCHLEVEL[[:space:]]*=/  { p=$3 }
+              /^SUBLEVEL[[:space:]]*=/    { s=$3 }
+              /^EXTRAVERSION[[:space:]]*=/ { if ($3 != "") x=$3 }
+              END { printf "%s.%s.%s%s", v, p, s, x }
+            '
+          }
+          cur="$(version_from HEAD)"
+          new="$(version_from FETCH_HEAD)"
+          echo "current=$cur" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+          echo "Local  $TARGET_BRANCH: $cur"
+          echo "Upstream $UPSTREAM_REF : $new"
+
+          if [ -z "$cur" ] || [ -z "$new" ]; then
+            echo "ERROR: could not read kernel version" >&2
+            exit 1
+          fi
+          if [ "$cur" = "$new" ]; then
+            if git merge-base --is-ancestor FETCH_HEAD HEAD 2>/dev/null; then
+              echo "Upstream is already included in $TARGET_BRANCH (v$cur). Nothing to do."
+              echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          newer="$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -1)"
+          if [ "$newer" != "$new" ]; then
+            echo "Upstream v$new is not newer than local v$cur. Nothing to do."
+            echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "New upstream version detected: v$cur -> v$new"
+          echo "sync_needed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create sync branch and merge
+        if: steps.compare.outputs.sync_needed == 'true'
+        env:
+          NEW: ${{ steps.compare.outputs.new }}
+        run: |
+          set -euo pipefail
+          git config --local user.name  "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          branch="sync/upstream-${NEW}"
+          git checkout -b "$branch"
+
+          if git merge --no-edit -m "Merge upstream v${NEW}" FETCH_HEAD; then
+            echo "Merge clean for v${NEW}."
+            echo "merge_ok=true"  >> "$GITHUB_ENV"
+          else
+            echo "!! Merge had conflicts for v${NEW}. Aborting - PR will flag manual resolution."
+            git merge --abort
+            echo "merge_ok=false" >> "$GITHUB_ENV"
+          fi
+
+          # Bump the package version regardless (so CI/release use the new version).
+          pkg_file=$(ls packages/linux-nabu-*/PKGBUILD | head -1)
+          sed -i "s/^pkgver=.*/pkgver=${NEW%%-*}/" "$pkg_file"
+          sed -i "s/^pkgrel=.*/pkgrel=1/" "$pkg_file"
+          git add "$pkg_file"
+          git commit -m "kernel: bump pkgver to ${NEW%%-*}" -m "Synced from upstream ref $UPSTREAM_REF." || true
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          # for the 'sync branch' step id
+          echo "BRANCH_NAME=$branch" >> "$GITHUB_ENV"
+
+      - name: Push sync branch
+        if: steps.compare.outputs.sync_needed == 'true'
+        run: |
+          timeout 300 git push --force origin "HEAD:$BRANCH_NAME"
+
+      - name: Open or update pull request
+        if: steps.compare.outputs.sync_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW: ${{ steps.compare.outputs.new }}
+        run: |
+          set -euo pipefail
+          cur="${{ steps.compare.outputs.current }}"
+          body_clean=$(printf 'Synced **%s** with upstream `%s` (**v%s** -> **v%s**).\n\n- Merge commit prepared on `%s`\n- `pkgver` bumped to `%s` (pkgrel reset to 1)\n- Review and merge; then run the `pkgbuild` workflow manually to build + release v%s.' \
+            "$TARGET_BRANCH" "$UPSTREAM_REF" "$cur" "$NEW" "$BRANCH_NAME" "$NEW" "$NEW")
+
+          body_conflict=$(printf 'WARNING: **Merge had conflicts** while syncing **v%s** -> **v%s** from `%s`.\n\nThe merge was aborted to avoid conflict-marker commits. This branch contains only the `pkgver` bump to `%s` (pkgrel reset to 1).\n\nResolve manually:\n\n```bash\ngit fetch origin %s\ngit checkout -b sync-work origin/%s\ngit fetch https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git %s\ngit merge FETCH_HEAD     # resolve conflicts, then commit\ngit push origin HEAD:%s\n```\n\nThen merge this PR.' \
+            "$cur" "$NEW" "$UPSTREAM_REF" "$NEW" "$BRANCH_NAME" "$BRANCH_NAME" "$UPSTREAM_REF" "$BRANCH_NAME")
+
+          if [ "${{ env.MERGE_OK }}" = "true" ]; then
+            body="$body_clean"
+          else
+            body="$body_conflict"
+          fi
+
+          pr_num=$(gh pr list --repo "${{ github.repository }}" --head "$BRANCH_NAME" --state open --json number --jq '.[0].number')
+          if [ -n "$pr_num" ] && [ "$pr_num" != "null" ]; then
+            echo "PR #$pr_num already exists - updating body."
+            gh pr edit "$pr_num" --repo "${{ github.repository }}" --body "$body"
+          else
+            gh pr create --repo "${{ github.repository }}" \
+              --base "$TARGET_BRANCH" --head "$BRANCH_NAME" \
+              --title "Sync with upstream v$NEW" --body "$body"
+          fi
