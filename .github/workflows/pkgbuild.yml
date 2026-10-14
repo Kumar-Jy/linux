@@ -59,30 +59,32 @@ jobs:
         if: matrix.distro == 'arch'
         run: |
           package="${{ steps.pkg.outputs.package }}"
-          branch="${{ github.ref_name }}"
-          mkdir -p pkg-out
-          echo "::group::Building $package (Arch, branch $branch)..."
+          mkdir -p pkg-out /tmp/arch-work
+          cp -r "packages/$package/"* /tmp/arch-work/
+          sed -i "s|git+https://github.com/[^\"]*|git+file:///src#commit=${{ github.sha }}|" /tmp/arch-work/PKGBUILD
+          echo "::group::Building $package (Arch, commit ${{ github.sha }})..."
           podman run --rm \
-            -v "$(pwd)/packages/$package:/work" \
+            -v "$(pwd):/src:ro" \
+            -v "/tmp/arch-work:/work" \
             -v "$(pwd)/pkg-out:/output" \
             -w /work \
             menci/archlinuxarm:base \
-            sh -c "
-              sed -i '/^#DisableSandbox/s/^#//' /etc/pacman.conf
-              echo 'DisableSandbox' >> /etc/pacman.conf
+            bash -c '
+              set -euo pipefail
+              sed -i "/^#DisableSandbox/s/^#//" /etc/pacman.conf
+              echo "DisableSandbox" >> /etc/pacman.conf
               pacman-key --init
               pacman-key --populate archlinuxarm
               pacman -Syu --noconfirm
               pacman -S --noconfirm base-devel git bc python3 xmlto docbook-xsl kmod inetutils dtc systemd-ukify libelf
               useradd -m builder
-              echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              git config --system --add safe.directory "*"
               chown -R builder:builder /work
-              # Build the branch selected in the UI (never a hardcoded branch).
-              sed -i \"s|git+https://github.com/[^/.]*/[^.]*\.git|git+\${{ github.server_url }}/\${{ github.repository }}.git|\" /work/PKGBUILD
-              sed -i \"s|#branch=[A-Za-z0-9._/-]*|#branch=\$branch|\" /work/PKGBUILD
-              su builder -c 'cd /work && (makepkg -s --noconfirm --skipchecksums || makepkg -d --noconfirm --skipchecksums)' || exit 1
-              cp /work/*.pkg.tar.* /output/
-            "
+              su builder -c "cd /work && makepkg -s --noconfirm --skipchecksums"
+              cp -v /work/*.pkg.tar.* /output/
+              chmod -R a+rw /output /work 2>/dev/null || true
+            '
           echo "::endgroup::"
           ls -la pkg-out/
 
@@ -117,29 +119,31 @@ jobs:
       - name: Build package (Fedora)
         if: matrix.distro == 'fedora'
         run: |
-          branch="${{ github.ref_name }}"
           mkdir -p pkg-out
-          echo "::group::Building .rpm (Fedora, branch $branch)..."
+          echo "::group::Building .rpm (Fedora)..."
           podman run --rm \
             -v "$(pwd):/work" \
             -v "$(pwd)/pkg-out:/output" \
             -w /work \
             fedora:latest \
-            sh -c "
-              set -e
+            bash -c '
+              set -euo pipefail
               git config --global --add safe.directory /work 2>/dev/null || true
-              dnf install -y --setopt=install_weak_deps=False \
+              dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
                 gcc make bc bison flex openssl openssl-devel perl perl-devel \
                 elfutils-libelf-devel elfutils-devel dwarves \
-                device-tree-compiler rpm-build kmod cpio git rsync
-              export DTC_FLAGS='-@'
+                dtc rpm-build kmod cpio git rsync diffutils findutils tar hostname python3 binutils
+              export KBUILD_BUILD_USER=builder
+              export KBUILD_BUILD_HOST=fedora-build
+              export DTC_FLAGS="-@"
               make ARCH=arm64 nabu_defconfig
-              make ARCH=arm64 -j\$(nproc) Image Image.gz modules dtbs
-              make ARCH=arm64 RPMOPTS='--nodeps' -j\$(nproc) binrpm-pkg
-              find rpmbuild/RPMS -name '*.rpm' -exec cp -v {} /output/ \; 2>/dev/null || \
-              find / -name 'kernel-*.rpm' -exec cp -v {} /output/ \; 2>/dev/null || true
-              chmod -R a+r /output
-            "
+              make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
+              make ARCH=arm64 RPMOPTS="--nodeps" -j$(nproc) binrpm-pkg
+              mkdir -p /output
+              find rpmbuild/RPMS -name "*.rpm" -exec cp -v {} /output/ \; 2>/dev/null || true
+              find / -name "kernel-*.rpm" -exec cp -v {} /output/ \; 2>/dev/null || true
+              chmod -R a+rw /output /work 2>/dev/null || true
+            '
           echo "::endgroup::"
           ls -la pkg-out/
 
