@@ -191,9 +191,13 @@ static int __init efi_rtc_probe(struct platform_device *dev)
 	struct rtc_device *rtc;
 	efi_time_t eft;
 	efi_time_cap_t cap;
+	struct rtc_time tm;
 
 	/* First check if the RTC is usable */
 	if (efi.get_time(&eft, &cap) != EFI_SUCCESS)
+		return -ENODEV;
+
+	if (!convert_from_efi_time(&eft, &tm))
 		return -ENODEV;
 
 	rtc = devm_rtc_allocate_device(&dev->dev);

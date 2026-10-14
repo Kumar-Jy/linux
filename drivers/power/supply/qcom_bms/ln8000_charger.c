@@ -952,12 +952,11 @@ static int ln8000_probe(struct i2c_client *client)
 	if (client->irq) {
 		ret = devm_request_threaded_irq(
 			dev, client->irq, NULL, ln8000_irq_handler,
-			IRQF_TRIGGER_FALLING | IRQF_ONESHOT, "ln8000-charger",
+			IRQF_ONESHOT, "ln8000-charger",
 			info);
 		if (ret < 0)
 			return dev_err_probe(dev, ret,
 					     "failed to request IRQ\n");
-		enable_irq_wake(client->irq);
 	}
 
 	ret = qcom_bms_register_charger(dev, QCOM_BMS_CHARGER_DIRECT,
@@ -965,8 +964,6 @@ static int ln8000_probe(struct i2c_client *client)
 	if (ret < 0)
 		return dev_err_probe(dev, ret,
 				     "failed to register with qcom_bms\n");
-
-	device_init_wakeup(dev, client->irq > 0);
 
 	return 0;
 }
