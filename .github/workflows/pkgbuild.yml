@@ -189,36 +189,130 @@ jobs:
           fi
 
           safe_branch="${branch//\//-}"
-          if [ "$branch" = "6.18" ]; then
+          if [ "$branch" = "6.18" ] || [ "$branch" = "7.2" ]; then
             tag="v${pkgver}-${pkgrel}"
           else
             tag="v${pkgver}-${pkgrel}-${safe_branch}"
           fi
-          title="linux-nabu ${pkgver}-${pkgrel}"
-          notes=$(printf 'Built from branch `%s` at commit `%s`.\n\n**Packages:**\n' "$branch" "${{ github.sha }}")
+          title="Linux Nabu ${pkgver}-${pkgrel}"
+
+          export PKGVER="$pkgver"
+          export PKGREL="$pkgrel"
+          export BRANCH="$branch"
+          export SHA="${{ github.sha }}"
+
+          python3 << 'EOF'
+          import glob
+          import inspect
+          import os
+          import zipfile
+
+          pkgver = os.environ['PKGVER']
+          pkgrel = os.environ['PKGREL']
+          branch = os.environ['BRANCH']
+          sha = os.environ['SHA']
+
+          os.makedirs('release-assets', exist_ok=True)
+
+          distro_files = {}
+          for distro in ['arch', 'ubuntu', 'fedora']:
+              dirs = glob.glob(f'pkg-*-{distro}')
+              if not dirs:
+                  print(f'::warning::Directory for {distro} not found')
+                  distro_files[distro] = []
+                  continue
+
+              d = dirs[0]
+              files = sorted([f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f)) and not f.startswith('.')])
+              distro_files[distro] = files
+
+              zip_name = f'linux-nabu-{pkgver}-{pkgrel}-{distro}.zip'
+              zip_path = os.path.join('release-assets', zip_name)
+              print(f'Compressing {len(files)} files into {zip_name}...')
+              with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+                  for fname in files:
+                      zf.write(os.path.join(d, fname), arcname=fname)
+
+          def fmt_files(flist):
+              return '<br>'.join(f'`{f}`' for f in flist) if flist else '*None*'
+
+          notes = f"""## Linux Nabu Kernel {pkgver}-{pkgrel}
+
+          Mainline Linux kernel build for the **Xiaomi Pad 5 (nabu)** with full hardware support across **Arch Linux ARM**, **Ubuntu**, and **Fedora**.
+
+          - **Kernel Version:** `{pkgver}` (release `{pkgrel}`)
+          - **Branch:** `{branch}`
+          - **Commit:** `{sha}`
+
+          ---
+
+          ### 📦 Distribution Packages
+
+          | Distribution | Package Archive | Included Files |
+          | :--- | :--- | :--- |
+          | **Arch Linux ARM** | `linux-nabu-{pkgver}-{pkgrel}-arch.zip` | {fmt_files(distro_files.get('arch', []))} |
+          | **Ubuntu (ARM64)** | `linux-nabu-{pkgver}-{pkgrel}-ubuntu.zip` | {fmt_files(distro_files.get('ubuntu', []))} |
+          | **Fedora (ARM64)** | `linux-nabu-{pkgver}-{pkgrel}-fedora.zip` | {fmt_files(distro_files.get('fedora', []))} |
+
+          ---
+
+          ### 🚀 Quick Install Instructions
+
+          #### Arch Linux ARM
+          ```bash
+          unzip linux-nabu-{pkgver}-{pkgrel}-arch.zip -d linux-nabu
+          cd linux-nabu && sudo pacman -U *.pkg.tar.*
+          ```
+
+          #### Ubuntu / Debian (ARM64)
+          ```bash
+          unzip linux-nabu-{pkgver}-{pkgrel}-ubuntu.zip -d linux-nabu
+          cd linux-nabu && sudo dpkg -i *.deb
+          ```
+
+          #### Fedora (ARM64)
+          ```bash
+          unzip linux-nabu-{pkgver}-{pkgrel}-fedora.zip -d linux-nabu
+          cd linux-nabu && sudo dnf install ./*.rpm
+          ```
+
+          ---
+
+          ### ✨ Hardware Support Built-in
+          - **Display & Touch:** 120Hz refresh rate, Novatek NT36523 touchscreen + stylus pen
+          - **Audio:** Quad speaker routing (Cirrus CS35L41 amplifiers) & 24-bit mic capture
+          - **Video:** Qualcomm Iris VPU hardware video decoding
+          - **Charging & Battery:** PM8150B SMB5 charger driver (15W USB-PD) + Renesas IDTP9418 wireless stylus charger
+          - **Sensors:** Snapdragon SLPI FastRPC sensor island (accelerometer, ambient light, gyroscope)
+          - **Power Management:** Deep sleep, PSCI cpuidle suspend, Bluetooth pull-up fix
+          - **Peripherals:** Official Xiaomi magnetic keyboard & cover lid hall sensor
+          """
+
+          notes = inspect.cleandoc(notes)
+          with open('release-notes.md', 'w') as f:
+              f.write(notes + '\n')
+          EOF
 
           shopt -s nullglob
-          all=()
-          for d in pkg-*/; do
-            for f in "$d"*; do
-              [[ -f "$f" ]] || continue
-              all+=("$f")
-              notes+=$(printf -- '- `%s`\n' "$(basename "$f")")
-            done
-          done
-          if [ "${#all[@]}" -eq 0 ]; then
-            echo "ERROR: no package files found under pkg-*/" >&2
+          zips=(release-assets/*.zip)
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "ERROR: no zip files found under release-assets/" >&2
             exit 1
           fi
 
           if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            echo "::group::Release $tag exists - updating assets and description"
-            gh release upload "$tag" --repo "$repo" --clobber "${all[@]}"
-            gh release edit "$tag" --repo "$repo" --title "$title" --notes "$notes"
+            echo "::group::Release $tag exists - cleaning loose assets and updating"
+            loose_assets=$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[] | select(.name | endswith(".zip") | not) | .name' 2>/dev/null || true)
+            for asset in $loose_assets; do
+              echo "Deleting loose asset: $asset"
+              gh release delete-asset "$tag" "$asset" --repo "$repo" --yes 2>/dev/null || true
+            done
+            gh release upload "$tag" --repo "$repo" --clobber "${zips[@]}"
+            gh release edit "$tag" --repo "$repo" --title "$title" --notes-file release-notes.md
             echo "::endgroup::"
           else
             echo "::group::Creating release $tag"
-            gh release create "$tag" --repo "$repo" --title "$title" --notes "$notes" "${all[@]}"
+            gh release create "$tag" --repo "$repo" --title "$title" --notes-file release-notes.md "${zips[@]}"
             echo "::endgroup::"
           fi
           gh release view "$tag" --repo "$repo" --json name,url --jq '"[name=\(.name)] url: \(.url)"'
