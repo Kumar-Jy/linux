@@ -381,10 +381,16 @@ static int smb_get_input_current_limit(void *priv, int *val)
 static int smb_set_usbin_suspend(void *priv, bool suspend)
 {
 	struct smb_chip *chip = priv;
+	int ret;
 
-	return regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
+	ret = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
 				  USBIN_SUSPEND_BIT,
 				  suspend ? USBIN_SUSPEND_BIT : 0);
+	if (!ret && !suspend)
+		mod_delayed_work(system_wq, &chip->status_change_work,
+				 msecs_to_jiffies(100));
+
+	return ret;
 }
 
 static void smb_status_change_work(struct work_struct *work)
@@ -648,7 +654,7 @@ static const struct smb_init_register smb5_init_seq[] = {
 	  .mask = USBIN_AICL_PERIODIC_RERUN_EN_BIT | USBIN_AICL_ADC_EN_BIT |
 		  USBIN_AICL_EN_BIT | SUSPEND_ON_COLLAPSE_USBIN_BIT,
 	  .val = USBIN_AICL_PERIODIC_RERUN_EN_BIT | USBIN_AICL_ADC_EN_BIT |
-		 USBIN_AICL_EN_BIT | SUSPEND_ON_COLLAPSE_USBIN_BIT },
+		 USBIN_AICL_EN_BIT },
 	/*
 	 * This overrides all of the other current limit configs and is
 	 * expected to be used for setting limits based on temperature.
