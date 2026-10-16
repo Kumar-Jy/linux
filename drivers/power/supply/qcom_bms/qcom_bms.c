@@ -686,8 +686,14 @@ static void qcom_bms_evaluate_direct_charge(struct qcom_bms_info *info)
 	mutex_unlock(&info->ops_lock);
 
 	if (!have_direct || !direct.ops->set_charging_enabled ||
-	    !direct.ops->get_online || !direct.ops->get_health)
+	    !direct.ops->get_online || !direct.ops->get_health) {
+		if (have_pmic && pmic.ops->set_usbin_suspend &&
+		    info->pmic_usbin_suspended) {
+			pmic.ops->set_usbin_suspend(pmic.priv, false);
+			info->pmic_usbin_suspended = false;
+		}
 		goto out;
+	}
 
 	if (!direct.ops->get_online(direct.priv, &online))
 		direct_online = online;
