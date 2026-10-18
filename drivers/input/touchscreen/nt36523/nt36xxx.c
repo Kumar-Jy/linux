@@ -24,7 +24,7 @@
 #include <linux/proc_fs.h>
 #include <linux/input/mt.h>
 #include <linux/debugfs.h>
-#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/of_irq.h>
 
 #ifdef CONFIG_DRM
@@ -551,7 +551,15 @@ static int32_t nvt_parse_dt(struct device *dev)
 	struct device_node *np = dev->of_node;
 	int32_t ret = 0;
 
-	ts->irq_gpio = of_get_named_gpio(np, "novatek,irq-gpio", 0);
+	struct gpio_desc *irq_desc;
+
+	irq_desc = devm_gpiod_get_optional(dev, "novatek,irq", GPIOD_IN);
+	if (IS_ERR(irq_desc))
+		return PTR_ERR(irq_desc);
+	if (irq_desc)
+		ts->irq_gpio = desc_to_gpio(irq_desc);
+	else
+		ts->irq_gpio = -EINVAL;
 	NVT_LOG("novatek,irq-gpio=%d\n", ts->irq_gpio);
 
 	ts->pen_support = of_property_read_bool(np, "novatek,pen-support");

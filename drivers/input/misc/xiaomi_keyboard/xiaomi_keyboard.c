@@ -4,7 +4,6 @@
 #include <linux/io.h>
 #include <linux/gpio/machine.h>
 #include <linux/gpio/consumer.h>
-#include <linux/of_gpio.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
@@ -203,31 +202,33 @@ static int xiaomi_keyboard_resetup_gpio(struct xiaomi_keyboard_platdata *pdata)
 #ifdef CONFIG_OF
 static int xiaomi_keyboard_parse_dt(struct device *dev)
 {
-	struct device_node *np = dev->of_node;
 	struct xiaomi_keyboard_platdata *pdata;
+	struct gpio_desc *desc;
 
 	pdata = mdata->pdata;
 
-	pdata->rst_gpio = of_get_named_gpio(np, "xiaomi-keyboard,rst-gpio", 0);
-	if (pdata->rst_gpio < 0) {
-		MI_KB_ERR("failed to get rst gpio: %d\n", pdata->rst_gpio);
-		return pdata->rst_gpio;
+	desc = devm_gpiod_get_optional(dev, "xiaomi-keyboard,rst", GPIOD_OUT_LOW);
+	if (IS_ERR(desc)) {
+		MI_KB_ERR("failed to get rst gpio\n");
+		return PTR_ERR(desc);
 	}
+	pdata->rst_gpio = desc ? desc_to_gpio(desc) : -EINVAL;
 	MI_KB_INFO("xiaomi-kb,reset-gpio=%d\n", pdata->rst_gpio);
 
-	pdata->in_irq_gpio =
-		of_get_named_gpio(np, "xiaomi-keyboard,in-irq-gpio", 0);
-	if (pdata->in_irq_gpio < 0) {
-		MI_KB_ERR("failed to get in-irq gpio: %d\n", pdata->in_irq_gpio);
-		return pdata->in_irq_gpio;
+	desc = devm_gpiod_get_optional(dev, "xiaomi-keyboard,in-irq", GPIOD_IN);
+	if (IS_ERR(desc)) {
+		MI_KB_ERR("failed to get in-irq gpio\n");
+		return PTR_ERR(desc);
 	}
+	pdata->in_irq_gpio = desc ? desc_to_gpio(desc) : -EINVAL;
 	MI_KB_INFO("xiaomi-kb,in-irq-gpio=%d\n", pdata->in_irq_gpio);
 
-	pdata->vdd_gpio = of_get_named_gpio(np, "xiaomi-keyboard,vdd-gpio", 0);
-	if (pdata->vdd_gpio < 0) {
-		MI_KB_ERR("failed to get vdd gpio: %d\n", pdata->vdd_gpio);
-		return pdata->vdd_gpio;
+	desc = devm_gpiod_get_optional(dev, "xiaomi-keyboard,vdd", GPIOD_OUT_LOW);
+	if (IS_ERR(desc)) {
+		MI_KB_ERR("failed to get vdd gpio\n");
+		return PTR_ERR(desc);
 	}
+	pdata->vdd_gpio = desc ? desc_to_gpio(desc) : -EINVAL;
 	MI_KB_INFO("xiaomi-kb,vdd-gpio=%d\n", pdata->vdd_gpio);
 
 	return 0;
