@@ -387,7 +387,7 @@ static int smb_set_usbin_suspend(void *priv, bool suspend)
 				  USBIN_SUSPEND_BIT,
 				  suspend ? USBIN_SUSPEND_BIT : 0);
 	if (!ret && !suspend)
-		mod_delayed_work(system_wq, &chip->status_change_work,
+		mod_delayed_work(system_dfl_wq, &chip->status_change_work,
 				 msecs_to_jiffies(100));
 
 	return ret;
@@ -437,7 +437,7 @@ static void smb_status_change_work(struct work_struct *work)
 			dev_err(chip->dev, "failed to rerun APSD: %d\n", rc);
 			return;
 		}
-		mod_delayed_work(system_wq, &chip->status_change_work,
+		mod_delayed_work(system_dfl_wq, &chip->status_change_work,
 				 msecs_to_jiffies(1000));
 		dev_dbg(chip->dev, "get charger type failed, rerun apsd\n");
 		return;
@@ -536,7 +536,7 @@ static int smb_set_authenticated(void *priv, bool authenticated)
 	struct smb_chip *chip = priv;
 
 	WRITE_ONCE(chip->authenticated, authenticated);
-	mod_delayed_work(system_wq, &chip->status_change_work, 0);
+	mod_delayed_work(system_dfl_wq, &chip->status_change_work, 0);
 
 	return 0;
 }
@@ -571,9 +571,8 @@ static irqreturn_t smb_handle_usb_plugin(int irq, void *data)
 	struct smb_chip *chip = data;
 
 	qcom_bms_notify_changed(chip->dev);
-
-	schedule_delayed_work(&chip->status_change_work,
-			      msecs_to_jiffies(1500));
+	mod_delayed_work(system_dfl_wq, &chip->status_change_work,
+			 msecs_to_jiffies(1500));
 
 	return IRQ_HANDLED;
 }
@@ -806,7 +805,7 @@ static int smb_probe(struct platform_device *pdev)
 				     "Failed to register with qcom_bms\n");
 
 	/* Initialise charger state */
-	mod_delayed_work(system_wq, &chip->status_change_work, 0);
+	mod_delayed_work(system_dfl_wq, &chip->status_change_work, 0);
 
 	return 0;
 }

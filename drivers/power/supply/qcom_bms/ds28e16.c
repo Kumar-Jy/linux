@@ -419,7 +419,7 @@ static void ds28e16_auth_work(struct work_struct *work)
 		delay_ms = DS28E16_FAILURE_RETRY_MS;
 	}
 
-	mod_delayed_work(system_wq, &ds->auth_work, msecs_to_jiffies(delay_ms));
+	mod_delayed_work(system_dfl_wq, &ds->auth_work, msecs_to_jiffies(delay_ms));
 }
 
 static void ds28e16_free_hmac(void *data)
@@ -511,7 +511,7 @@ static int ds28e16_probe(struct platform_device *pdev)
 		return dev_err_probe(&pdev->dev, ret,
 				     "failed to register authenticator\n");
 
-	mod_delayed_work(system_wq, &ds->auth_work,
+	mod_delayed_work(system_dfl_wq, &ds->auth_work,
 			 msecs_to_jiffies(DS28E16_INITIAL_DELAY_MS));
 	return 0;
 }
