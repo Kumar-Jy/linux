@@ -496,13 +496,6 @@ static bool irq_can_handle_pm(struct irq_desc *desc)
 	 * event.
 	 */
 	if (unlikely(irqd_has_set(irqd, IRQD_WAKEUP_ARMED))) {
-		/*
-		 * A platform may opt in exactly one known-phantom s2idle IRQ.
-		 * While its grace window is open the helper declines to clear
-		 * IRQD_WAKEUP_ARMED and records no wakeup, so the glitch lets
-		 * s2idle settle instead of aborting it.  Either way the IRQ is
-		 * left to the normal handling path below.
-		 */
 		irq_pm_handle_wakeup(desc);
 		return false;
 	}

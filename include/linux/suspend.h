@@ -258,17 +258,6 @@ extern void __init pm_states_init(void);
 extern void s2idle_set_ops(const struct platform_s2idle_ops *ops);
 extern void s2idle_wake(void);
 
-/*
- * s2idle freeze-transition grace period.  A platform may opt one known-bad
- * wake IRQ into this window when an electrical edge is generated while the
- * last CPU freezes timekeeping.  Only that IRQ is passed to its regular
- * handler instead of aborting s2idle; all other wake IRQs retain their normal
- * behaviour.
- */
-extern void pm_s2idle_grace_start(void);
-extern void pm_s2idle_grace_end(void);
-extern void pm_s2idle_set_wake_irq(int irq);
-extern bool pm_s2idle_grace_ignore_wakeup_irq(unsigned int irq);
 
 /**
  * arch_suspend_disable_irqs - disable IRQs for suspend
@@ -312,10 +301,6 @@ static inline bool idle_should_enter_s2idle(void) { return false; }
 static inline void __init pm_states_init(void) {}
 static inline void s2idle_set_ops(const struct platform_s2idle_ops *ops) {}
 static inline void s2idle_wake(void) {}
-static inline void pm_s2idle_grace_start(void) {}
-static inline void pm_s2idle_grace_end(void) {}
-static inline void pm_s2idle_set_wake_irq(int irq) {}
-static inline bool pm_s2idle_grace_ignore_wakeup_irq(unsigned int irq) { return false; }
 #endif /* !CONFIG_SUSPEND */
 
 static inline bool pm_suspend_in_progress(void)
