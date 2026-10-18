@@ -15,7 +15,7 @@
 #   - Default config: arch/arm64/configs/nabu_defconfig
 
 pkgbase=linux-nabu
-pkgver=7.2.10
+pkgver=7.2.11
 pkgrel=0
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux-nabu"

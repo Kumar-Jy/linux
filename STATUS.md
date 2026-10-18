@@ -12,7 +12,7 @@ This document tracks the hardware support status and driver implementation detai
 | **Touch** | Capacitive Multi-touch | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Novatek NT36523 SPI touchscreen (`novatek/novatek_nt36523_fw.bin`), 10-point touch |
 | **Graphics** | Adreno 640 GPU 3D Acceleration | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Mesa Turnip Vulkan 1.3 (`0x6040001`), Freedreno OpenGL 4.6, GMU firmware v2.0.261 |
 | **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | ✅ Working | ✅ Working | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), `HW_CTRL_TRIGGER` GDSC |
-| **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | ✅ Working | ✅ Working | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire — known high-volume speaker cracking under investigation |
+| **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | ✅ Working | ✅ Working | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire 150Hz Linkwitz-Riley protection filter |
 | **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
 | **Camera (Rear)**| 13MP OmniVision OV13B10 | ✅ Working | ✅ Working | ✅ Working | ✅ Working | I2C `4-0010` via CCI, `msm_csiphy0` on CAMSS, CN3927 VCM autofocus, 4208x3120 capture |
 | **Camera (Front)**| 8MP OmniVision OV8856 | ✅ Working | ✅ Working | ✅ Working | ✅ Working | I2C `5-0010` via CCI, `msm_csiphy1`, native `SBGGR10_1X10` format alignment |
@@ -68,9 +68,9 @@ This document tracks the hardware support status and driver implementation detai
 
 ## Linux 7.2 Port
 
-The full nabu/SM8150 stack was ported forward from the 6.18 baseline onto a pristine upstream **Linux 7.2.9** tree (branch `7.2`, commit `3318bca60`). All of the 6.18 fixes above carry over and every subsystem in the matrix above is working on 7.2.9.
+The full nabu/SM8150 stack is maintained on the **Linux 7.2.y** stable series (currently Linux **7.2.11**). All subsystems are verified working.
 
 - **Toolchain**: cross-built with `aarch64-linux-gnu-gcc` 15.2.0 / binutils 2.46; 40 merge conflicts resolved
-- **Portability & Cleanup fixes**: Migrated out-of-tree drivers to standard `gpiod_*` APIs and removed obsolete `include/linux/of_gpio.h`; corrected DAPM audio speaker routing directly in `sm8150-xiaomi-nabu.dts` without driver workarounds; optimized IDTP9418 pen wireless charging I2C transfers with `regmap_bulk_read/write` and restricted device node permissions (0660); added safe timeout to SLIMbus QMI wait; `sm8150.dtsi` dedup + `uart13`; `q6asm.c` APR const fix; `ov8856.c` label fix; `ath10k/core.c` `#include <linux/hex.h>`; `idtp9418.c` `alarm_start_timer`; `q6asm-dai.c` `.pcm_new`
-- **Packaging**: `linux-nabu` 7.2.9-0 (`arch=('aarch64')`, kernel release `7.2.9-0-krjy`) with 774 modules and a matching `linux-nabu-headers` package
-- **Verification**: installed kernel image hashes match the local build (`Image` `8592c5d6…` / `Image.gz` `0baed5f9…`); `build/Makefile` reports `VERSION=7 PATCHLEVEL=2 SUBLEVEL=9`
+- **Portability & Cleanup fixes**: Migrated out-of-tree drivers to standard `gpiod_*` APIs and removed obsolete `include/linux/of_gpio.h`; corrected DAPM audio speaker routing in DTS; added PipeWire 150Hz Linkwitz-Riley protection filter to prevent micro-speaker excursion cracking; eliminated power-button suspend bouncing and false-wakeups; migrated `qcom_bms` to `system_dfl_wq`; enabled ZRAM zstd compression; optimized IDTP9418 pen wireless charging I2C transfers with `regmap_bulk_read/write` and restricted device node permissions (0660); added safe timeout to SLIMbus QMI wait.
+- **Packaging**: `linux-nabu` 7.2.11-0 (`arch=('aarch64')`, kernel release `7.2.11-0-krjy`) with matching headers package.
+- **Verification**: `Makefile` reports `VERSION=7 PATCHLEVEL=2 SUBLEVEL=11`.
