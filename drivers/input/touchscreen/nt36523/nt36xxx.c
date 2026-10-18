@@ -619,17 +619,9 @@ return:
 *******************************************************/
 static int nvt_gpio_config(struct nvt_ts_data *ts)
 {
-	int32_t ret = 0;
-
-	/* request INT-pin (Input) */
-	if (gpio_is_valid(ts->irq_gpio)) {
-		ret = gpio_request_one(ts->irq_gpio, GPIOF_IN, "NVT-int");
-		if (ret) {
-			NVT_ERR("Failed to request NVT-int GPIO\n");
-		}
-	}
-
-	return ret;
+	/* The interrupt GPIO was already acquired and configured as input
+	 * via devm_gpiod_get_optional in nvt_parse_dt(). */
+	return 0;
 }
 
 /*******************************************************
@@ -641,8 +633,7 @@ return:
 *******************************************************/
 static void nvt_gpio_deconfig(struct nvt_ts_data *ts)
 {
-	if (gpio_is_valid(ts->irq_gpio))
-		gpio_free(ts->irq_gpio);
+	/* Automatically managed by devres (devm) */
 }
 
 static uint8_t nvt_fw_recovery(uint8_t *point_data)
