@@ -16,8 +16,8 @@
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/reboot.h>
+#include <linux/jiffies.h>
 #include <linux/regmap.h>
-#include <linux/suspend.h>
 
 #define PON_REV2			0x01
 
@@ -153,15 +153,6 @@ static irqreturn_t pm8941_pwrkey_irq(int irq, void *_data)
 	unsigned int sts;
 	int err;
 
-	/*
-	 * Drop the Nabu-opted phantom edge arriving during the s2idle transition
-	 * so no spurious KEY_POWER event reaches
-	 * userspace -- logind cannot tell those apart from a real press and
-	 * would act on them while the system is supposed to stay asleep.
-	 */
-	if (pm_s2idle_grace_ignore_wakeup_irq(irq))
-		return IRQ_HANDLED;
-
 	if (pwrkey->sw_debounce_time_us) {
 		if (ktime_before(ktime_get(), pwrkey->sw_debounce_end_time)) {
 			dev_dbg(pwrkey->dev,
@@ -233,9 +224,37 @@ static int pm8941_pwrkey_sw_debounce_init(struct pm8941_pwrkey *pwrkey)
 static int pm8941_pwrkey_suspend(struct device *dev)
 {
 	struct pm8941_pwrkey *pwrkey = dev_get_drvdata(dev);
+	unsigned int sts;
+	int error;
 
-	if (device_may_wakeup(dev))
+	if (device_may_wakeup(dev)) {
+		/*
+		 * If the power key was pressed to initiate suspend, wait for
+		 * the user to release it before arming wakeup. Otherwise, the
+		 * release edge (or contact bounce) arriving during or after
+		 * suspend entry will trigger a false wakeup.
+		 */
+		error = regmap_read(pwrkey->regmap,
+				    pwrkey->baseaddr + PON_RT_STS, &sts);
+		if (!error && (sts & pwrkey->data->status_bit)) {
+			unsigned long timeout = jiffies + msecs_to_jiffies(500);
+
+			while (time_before(jiffies, timeout)) {
+				usleep_range(5000, 10000);
+				error = regmap_read(pwrkey->regmap,
+						    pwrkey->baseaddr + PON_RT_STS, &sts);
+				if (!error && !(sts & pwrkey->data->status_bit))
+					break;
+			}
+
+			/* Allow hardware debounce and line to settle */
+			msleep(50);
+		}
+
+		pwrkey->last_status = false;
+		pwrkey->sw_debounce_end_time = ktime_set(0, 0);
 		enable_irq_wake(pwrkey->irq);
+	}
 
 	return 0;
 }
@@ -246,6 +265,8 @@ static int pm8941_pwrkey_resume(struct device *dev)
 
 	if (device_may_wakeup(dev))
 		disable_irq_wake(pwrkey->irq);
+
+	pwrkey->sw_debounce_end_time = ktime_set(0, 0);
 
 	return 0;
 }
@@ -419,19 +440,12 @@ static int pm8941_pwrkey_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, pwrkey);
 	device_init_wakeup(&pdev->dev, wakeup);
 
-	/* Nabu's PMIC line glitches once while entering s2idle. */
-	if (of_property_read_bool(pdev->dev.of_node, "qcom,s2idle-wake-grace"))
-		pm_s2idle_set_wake_irq(pwrkey->irq);
-
 	return 0;
 }
 
 static void pm8941_pwrkey_remove(struct platform_device *pdev)
 {
 	struct pm8941_pwrkey *pwrkey = platform_get_drvdata(pdev);
-
-	if (of_property_read_bool(pdev->dev.of_node, "qcom,s2idle-wake-grace"))
-		pm_s2idle_set_wake_irq(-1);
 
 	if (pwrkey->data->supports_ps_hold_poff_config)
 		unregister_reboot_notifier(&pwrkey->reboot_notifier);
