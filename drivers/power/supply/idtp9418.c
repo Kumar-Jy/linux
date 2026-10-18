@@ -128,7 +128,7 @@ static struct miscdevice idtp9418_miscdev = {
 	.minor = MISC_DYNAMIC_MINOR,
 	.name = "idtp9418",
 	.fops = &idtp9418_fops,
-	.mode = 0666,
+	.mode = 0660,
 };
 
 static int idtp9418_read(struct idtp9418_device_info *di, u16 reg, u8 *val)
@@ -136,7 +136,6 @@ static int idtp9418_read(struct idtp9418_device_info *di, u16 reg, u8 *val)
 	unsigned int temp;
 	int rc;
 
-	usleep_range(1000, 2000);
 	rc = regmap_read(di->regmap, reg, &temp);
 	if (rc >= 0)
 		*val = (u8)temp;
@@ -147,7 +146,6 @@ static int idtp9418_write(struct idtp9418_device_info *di, u16 reg, u8 val)
 {
 	int rc;
 
-	usleep_range(1000, 2000);
 	rc = regmap_write(di->regmap, reg, val);
 	if (rc < 0)
 		dev_err(di->dev, "idtp9418 write error: %d\n", rc);
@@ -159,14 +157,10 @@ static int idtp9418_read_buffer(struct idtp9418_device_info *di, u16 reg,
 {
 	int rc;
 
-	while (size--) {
-		rc = idtp9418_read(di, reg++, buf++);
-		if (rc < 0) {
-			dev_err(di->dev, "read buf error: %d\n", rc);
-			return rc;
-		}
-	}
-	return 0;
+	rc = regmap_bulk_read(di->regmap, reg, buf, size);
+	if (rc < 0)
+		dev_err(di->dev, "read buf error at 0x%04x: %d\n", reg, rc);
+	return rc;
 }
 
 static int idtp9418_write_buffer(struct idtp9418_device_info *di, u16 reg,
@@ -174,14 +168,10 @@ static int idtp9418_write_buffer(struct idtp9418_device_info *di, u16 reg,
 {
 	int rc;
 
-	while (size--) {
-		rc = idtp9418_write(di, reg++, *buf++);
-		if (rc < 0) {
-			dev_err(di->dev, "write buf error: %d\n", rc);
-			return rc;
-		}
-	}
-	return 0;
+	rc = regmap_bulk_write(di->regmap, reg, buf, size);
+	if (rc < 0)
+		dev_err(di->dev, "write buf error at 0x%04x: %d\n", reg, rc);
+	return rc;
 }
 
 static void reverse_clrInt(struct idtp9418_device_info *di, u8 *buf, u32 size)
