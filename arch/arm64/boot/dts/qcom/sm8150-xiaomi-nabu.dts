@@ -243,6 +243,75 @@
 			wakeup-source;
 		};
 	};
+
+	sound: sound {
+		compatible = "qcom,sm8150-sndcard";
+		pinctrl-0 = <&quat_tdm_active
+			&quat_tdm_sd1_active>;
+		pinctrl-names = "default";
+		model = "Xiaomi Pad 5";
+
+		widgets =
+			"Speaker", "BR Speaker",
+			"Speaker", "TR Speaker",
+			"Speaker", "BL Speaker",
+			"Speaker", "TL Speaker";
+
+		audio-routing =	"RX_BIAS", "MCLK",
+			"AIF1 CAP", "MCLK",
+			"AMIC1", "MIC BIAS3",
+			"AMIC3", "MIC BIAS4",
+			"BR Speaker", "BR SPK",
+			"TR Speaker", "TR SPK",
+			"BL Speaker", "BL SPK",
+			"TL Speaker", "TL SPK";
+
+		mm1-dai-link {
+			link-name = "MultiMedia1";
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+			};
+		};
+
+		mm2-dai-link {
+			link-name = "MultiMedia2";
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+			};
+		};
+
+		speaker-dai-link {
+			link-name = "Speaker Playback";
+			cpu {
+				sound-dai = <&q6afedai QUATERNARY_TDM_RX_0>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&cs35l41_br 0>, <&cs35l41_tr 0>,
+					<&cs35l41_bl 0>, <&cs35l41_tl 0>;
+			};
+		};
+
+		//Bottom & Top internal microphones
+		slimcap-dai-link {
+			link-name = "SLIM Capture 1";
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_0_TX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&wcd9340 1>; /* AIF1_CAP */
+			};
+		};
+	};
 };
 
 &apps_rsc {
@@ -996,69 +1065,6 @@
 &remoteproc_mpss {
 	status = "okay";
 	firmware-name = "qcom/sm8150/xiaomi/nabu/modem.mbn";
-};
-
-&sound {
-	compatible = "qcom,sm8150-sndcard";
-	pinctrl-0 = <&quat_tdm_active
-		&quat_tdm_sd1_active>;
-	pinctrl-names = "default";
-	model = "Xiaomi Pad 5";
-
-	audio-routing =	"RX_BIAS", "MCLK",
-		"AIF1 CAP", "MCLK",
-		"AMIC1", "MIC BIAS3",
-		"AMIC3", "MIC BIAS4",
-		"MultiMedia1 Playback", "BR SPK",
-		"MultiMedia1 Playback", "TR SPK",
-		"MultiMedia1 Playback", "BL SPK",
-		"MultiMedia1 Playback", "TL SPK";
-
-	mm1-dai-link {
-		link-name = "MultiMedia1";
-		cpu {
-			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
-		};
-	};
-
-	mm2-dai-link {
-		link-name = "MultiMedia2";
-		cpu {
-			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
-		};
-	};
-
-	speaker-dai-link {
-		link-name = "Speaker Playback";
-		cpu {
-			sound-dai = <&q6afedai QUATERNARY_TDM_RX_0>;
-		};
-
-		platform {
-			sound-dai = <&q6routing>;
-		};
-
-		codec {
-			sound-dai = <&cs35l41_br 0>, <&cs35l41_tr 0>,
-				<&cs35l41_bl 0>, <&cs35l41_tl 0>;
-		};
-	};
-
-	//Bottom & Top internal microphones
-	slimcap-dai-link {
-		link-name = "SLIM Capture 1";
-		cpu {
-			sound-dai = <&q6afedai SLIMBUS_0_TX>;
-		};
-
-		platform {
-			sound-dai = <&q6routing>;
-		};
-
-		codec {
-			sound-dai = <&wcd9340 1>; /* AIF1_CAP */
-		};
-	};
 };
 
 &spi18 {
