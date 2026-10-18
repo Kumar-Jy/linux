@@ -1454,12 +1454,15 @@ static void qcom_slim_ngd_up_worker(struct work_struct *work)
 	ctrl = container_of(work, struct qcom_slim_ngd_ctrl, ngd_up_work);
 
 	/*
-	 * Wait unbounded for the SLIM QMI service: it and the audio protection
-	 * domain can come up in either order.  The old one-second cap could
-	 * leave the SLIM controller unregistered and the WCD934x codec
-	 * unenumerated, so do not time out here.
+	 * Wait up to 10 seconds for the SLIM QMI service: it and the audio protection
+	 * domain can come up in either order. The old one-second cap was too tight,
+	 * but an infinite wait risks hanging the workqueue if the DSP fails.
 	 */
-	wait_for_completion_interruptible(&ctrl->qmi_up);
+	if (!wait_for_completion_interruptible_timeout(&ctrl->qmi_up,
+						       msecs_to_jiffies(10 * MSEC_PER_SEC))) {
+		dev_err(ctrl->dev, "QMI wait timeout after 10s\n");
+		return;
+	}
 
 	mutex_lock(&ctrl->ssr_lock);
 	qcom_slim_ngd_enable(ctrl, true);
