@@ -1009,7 +1009,6 @@
 };
 
 &pon_pwrkey {
-	qcom,s2idle-wake-grace;
 	status = "okay";
 };
 
