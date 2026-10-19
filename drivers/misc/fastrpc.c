@@ -2689,29 +2689,6 @@ static void fastrpc_attach_pdr_release(struct fastrpc_channel_ctx *cctx)
 }
 #endif
 
-/*
- * Exception list for older platforms that use default_soc_data but whose
- * DSP firmware supports FastRPC polling mode.
- *
- * NOTE: This list is intentionally closed.
- * Do NOT add new platforms here. New SoCs must advertise polling mode
- * support via their soc_data.
- */
-
-static const struct of_device_id fastrpc_poll_supported_machines[] __maybe_unused = {
-	{ .compatible = "qcom,milos" },
-	{ .compatible = "qcom,qcs8300" },
-	{ .compatible = "qcom,sa8775p" },
-	{ .compatible = "qcom,sar2130p" },
-	{ .compatible = "qcom,sm8450" },
-	{ .compatible = "qcom,sm8550" },
-	{ .compatible = "qcom,sm8650" },
-	{ .compatible = "qcom,sm8750" },
-	{ .compatible = "qcom,x1e80100" },
-	{ .compatible = "qcom,x1p42100" },
-	{},
-};
-
 static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 {
 	struct device *rdev = &rpdev->dev;
@@ -2720,6 +2697,9 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	const char *domain;
 	bool secure_dsp;
 	unsigned int vmids[FASTRPC_MAX_VMIDS];
+	const struct fastrpc_soc_data *soc_data;
+
+	soc_data = device_get_match_data(rdev);
 
 	err = of_property_read_string(rdev->of_node, "label", &domain);
 	if (err) {
