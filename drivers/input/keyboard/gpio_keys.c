@@ -570,9 +570,12 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 			 * If reading the GPIO won't sleep, we can use a
 			 * hrtimer instead of a standard timer for the software
 			 * debounce, to reduce the latency as much as possible.
+			 * Switches with a blocking notifier must use the workqueue:
+			 * their callbacks may sleep even when the GPIO read cannot.
 			 */
 			bdata->debounce_use_hrtimer =
-					!gpiod_cansleep(bdata->gpiod);
+				!gpiod_cansleep(bdata->gpiod) &&
+				!(button->type == EV_SW && button->enable_notify_chain);
 		}
 
 		/*
