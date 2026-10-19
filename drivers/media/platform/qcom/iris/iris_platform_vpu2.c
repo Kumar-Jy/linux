@@ -15,6 +15,7 @@
 
 #include "iris_platform_milos.h"
 #include "iris_platform_sc7280.h"
+#include "iris_platform_sm8150.h"
 #include "iris_platform_sm8250.h"
 
 static const struct iris_firmware_desc iris_milos_desc = {
@@ -133,6 +134,35 @@ const struct iris_platform_data sc7280_data = {
 	.max_core_mbpf = 4096 * 2176 / 256 * 2 + 1920 * 1088 / 256,
 	/* max spec for SC7280 is 4096x2176@60fps */
 	.max_core_mbps = 4096 * 2176 / 256 * 60,
+};
+
+const struct iris_platform_data sm8150_data = {
+	.firmware_desc_gen1 = &iris_vpu20_p1_gen1_desc,
+	.vpu_ops = &iris_vpu2_ops,
+	.icc_tbl = iris_icc_info_vpu2,
+	.icc_tbl_size = ARRAY_SIZE(iris_icc_info_vpu2),
+	.clk_rst_tbl = sm8150_clk_reset_table,
+	.clk_rst_tbl_size = ARRAY_SIZE(sm8150_clk_reset_table),
+	.bw_tbl_dec = sm8250_bw_table_dec,
+	.bw_tbl_dec_size = ARRAY_SIZE(sm8250_bw_table_dec),
+	.pmdomain_tbl = sm8150_pmdomain_table,
+	.pmdomain_tbl_size = ARRAY_SIZE(sm8150_pmdomain_table),
+	.opp_pd_tbl = sm8150_opp_pd_table,
+	.opp_pd_tbl_size = ARRAY_SIZE(sm8150_opp_pd_table),
+	.clk_tbl = sm8150_clk_table,
+	.clk_tbl_size = ARRAY_SIZE(sm8150_clk_table),
+	.opp_clk_tbl = sm8150_opp_clk_table,
+	/* Upper bound of DMA address range */
+	.dma_mask = 0xe0000000 - 1,
+	.inst_iris_fmts = iris_fmts_vpu2_dec,
+	.inst_iris_fmts_size = ARRAY_SIZE(iris_fmts_vpu2_dec),
+	.inst_caps = &platform_inst_cap_vpu2,
+	.tz_cp_config_data = tz_cp_config_vpu2,
+	.tz_cp_config_data_size = ARRAY_SIZE(tz_cp_config_vpu2),
+	.num_vpp_pipe = 2,
+	.max_session_count = 16,
+	.max_core_mbpf = NUM_MBS_8K,
+	.max_core_mbps = ((7680 * 4320) / 256) * 60,
 };
 
 const struct iris_platform_data sm8250_data = {

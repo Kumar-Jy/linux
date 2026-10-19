@@ -7,6 +7,8 @@
 
 #include "msm_kms.h"
 #include "dsi.h"
+#include "drm/drm_notifier.h"
+#include <linux/workqueue.h>
 
 #define DSI_CLOCK_MASTER	DSI_0
 #define DSI_CLOCK_SLAVE		DSI_1
@@ -275,6 +277,27 @@ static void dsi_mgr_bridge_power_off(struct drm_bridge *bridge)
 	dsi_mgr_phy_disable(id);
 }
 
+/* blank-notify deferral work to prevent KMS atomic commit deadlock */
+static struct work_struct dsi_blank_work;
+static bool dsi_blank_work_inited;
+
+static void dsi_blank_work_fn(struct work_struct *work)
+{
+	enum drm_notifier_data blank = MI_DRM_BLANK_UNBLANK;
+
+	mi_drm_notifier_call_chain(MI_DRM_EVENT_BLANK, &blank);
+}
+
+static void dsi_mgr_bridge_enable(struct drm_bridge *bridge,
+				  struct drm_atomic_commit *commit)
+{
+	if (!dsi_blank_work_inited) {
+		INIT_WORK(&dsi_blank_work, dsi_blank_work_fn);
+		dsi_blank_work_inited = true;
+	}
+	schedule_work(&dsi_blank_work);
+}
+
 static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge,
 				      struct drm_atomic_commit *commit)
 {
@@ -341,8 +364,12 @@ static void dsi_mgr_bridge_post_disable(struct drm_bridge *bridge,
 	struct mipi_dsi_host *host = msm_dsi->host;
 	bool is_bonded_dsi = IS_BONDED_DSI();
 	int ret;
+	enum drm_notifier_data notifier_data;
 
 	DBG("id=%d", id);
+
+	notifier_data = MI_DRM_BLANK_POWERDOWN;
+	mi_drm_notifier_call_chain(MI_DRM_EARLY_EVENT_BLANK, &notifier_data);
 
 	/*
 	 * Do nothing with the host if it is slave-DSI in case of bonded DSI.
@@ -452,6 +479,7 @@ static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
 	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
 	.attach = dsi_mgr_bridge_attach,
 	.atomic_pre_enable = dsi_mgr_bridge_pre_enable,
+	.atomic_enable = dsi_mgr_bridge_enable,
 	.atomic_post_disable = dsi_mgr_bridge_post_disable,
 	.mode_set = dsi_mgr_bridge_mode_set,
 	.mode_valid = dsi_mgr_bridge_mode_valid,
@@ -496,7 +524,7 @@ int msm_dsi_manager_connector_init(struct msm_dsi *msm_dsi,
 int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
 {
 	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
-	struct msm_dsi *msm_dsi0 = dsi_mgr_get_dsi(DSI_0);
+	struct msm_dsi *msm_dsi1 = dsi_mgr_get_dsi(DSI_1);
 	struct mipi_dsi_host *host = msm_dsi->host;
 	bool is_read = (msg->rx_buf && msg->rx_len);
 	bool need_sync = (IS_SYNC_NEEDED() && !is_read);
@@ -507,14 +535,14 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
 
 	/* In bonded master case, panel requires the same commands sent to
 	 * both DSI links. Host issues the command trigger to both links
-	 * when DSI_1 calls the cmd transfer function, no matter it happens
-	 * before or after DSI_0 cmd transfer.
+	 * when DSI_0 calls the cmd transfer function, no matter it happens
+	 * before or after DSI_1 cmd transfer.
 	 */
-	if (need_sync && (id == DSI_0))
+	if (need_sync && (id == DSI_1))
 		return is_read ? msg->rx_len : msg->tx_len;
 
-	if (need_sync && msm_dsi0) {
-		ret = msm_dsi_host_xfer_prepare(msm_dsi0->host, msg);
+	if (need_sync && msm_dsi1) {
+		ret = msm_dsi_host_xfer_prepare(msm_dsi1->host, msg);
 		if (ret) {
 			pr_err("%s: failed to prepare non-trigger host, %d\n",
 				__func__, ret);
@@ -533,8 +561,8 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
 	msm_dsi_host_xfer_restore(host, msg);
 
 restore_host0:
-	if (need_sync && msm_dsi0)
-		msm_dsi_host_xfer_restore(msm_dsi0->host, msg);
+	if (need_sync && msm_dsi1)
+		msm_dsi_host_xfer_restore(msm_dsi1->host, msg);
 
 	return ret;
 }
@@ -542,14 +570,14 @@ restore_host0:
 bool msm_dsi_manager_cmd_xfer_trigger(int id, u32 dma_base, u32 len)
 {
 	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
-	struct msm_dsi *msm_dsi0 = dsi_mgr_get_dsi(DSI_0);
+	struct msm_dsi *msm_dsi1 = dsi_mgr_get_dsi(DSI_1);
 	struct mipi_dsi_host *host = msm_dsi->host;
 
-	if (IS_SYNC_NEEDED() && (id == DSI_0))
+	if (IS_SYNC_NEEDED() && (id == DSI_1))
 		return false;
 
-	if (IS_SYNC_NEEDED() && msm_dsi0)
-		msm_dsi_host_cmd_xfer_commit(msm_dsi0->host, dma_base, len);
+	if (IS_SYNC_NEEDED() && msm_dsi1)
+		msm_dsi_host_cmd_xfer_commit(msm_dsi1->host, dma_base, len);
 
 	msm_dsi_host_cmd_xfer_commit(host, dma_base, len);
 

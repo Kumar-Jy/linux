@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/power/supply/lionsemi,ln8000.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: LION Semiconductor LN8000 Switched-Capacitor Direct Charger
+
+maintainers:
+  - map220v <map220v300@gmail.com>
+
+description: |
+  The LN8000 is a 2:1 switched-capacitor charger that converts a
+  high-voltage input (negotiated over USB-PD, up to ~13V) to the battery
+  voltage at roughly double the current. It is used as a parallel direct-charge
+  path that offloads the PMIC's integrated USBIN charger for high-power
+  (33W-class) charging.
+
+allOf:
+  - $ref: power-supply.yaml#
+
+properties:
+  compatible:
+    const: lionsemi,ln8000
+
+  reg:
+    maxItems: 1
+
+  interrupts:
+    maxItems: 1
+    description: |
+      Interrupt from the LN8000 INT pin. Asserted on fault, watchdog,
+      mode-change and ADC-done events.
+
+  lionsemi,bat-ovp-threshold-microvolt:
+    description: Battery over-voltage protection threshold.
+    default: 4440000
+    minimum: 3725000
+    maximum: 5000000
+
+  lionsemi,bus-ovp-threshold-microvolt:
+    description: Input (bus) over-voltage protection threshold.
+    default: 9500000
+
+  lionsemi,bus-ocp-threshold-microamp:
+    description: Input (bus) over-current protection threshold.
+    default: 2000000
+
+  lionsemi,ntc-alarm-cfg:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description: NTC alarm threshold configuration code (0..1023).
+    default: 226
+
+  lionsemi,vbat-ovp-disable:
+    type: boolean
+    description: Disable battery over-voltage protection.
+
+  lionsemi,vbat-reg-disable:
+    type: boolean
+    description: Disable battery float-voltage regulation loop.
+
+  lionsemi,iin-ocp-disable:
+    type: boolean
+    description: Disable input over-current protection.
+
+  lionsemi,iin-reg-disable:
+    type: boolean
+    description: Disable input current regulation loop.
+
+  lionsemi,tbus-mon-disable:
+    type: boolean
+    description: Disable bus (TSBUS) temperature monitoring.
+
+  lionsemi,tbat-mon-disable:
+    type: boolean
+    description: Disable battery (TSBAT) temperature monitoring.
+
+required:
+  - compatible
+  - reg
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    i2c {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        charger@51 {
+            compatible = "lionsemi,ln8000";
+            reg = <0x51>;
+            interrupt-parent = <&tlmm>;
+            interrupts = <55 IRQ_TYPE_LEVEL_LOW>;
+
+            lionsemi,bat-ovp-threshold-microvolt = <4560000>;
+            lionsemi,bus-ovp-threshold-microvolt = <13000000>;
+            lionsemi,bus-ocp-threshold-microamp = <3750000>;
+            lionsemi,ntc-alarm-cfg = <226>;
+
+            lionsemi,tbus-mon-disable;
+            lionsemi,tbat-mon-disable;
+            lionsemi,iin-ocp-disable;
+            lionsemi,iin-reg-disable;
+            lionsemi,vbat-reg-disable;
+        };
+    };

@@ -577,7 +577,7 @@ static struct clk_rcg2 disp_cc_mdss_pclk0_clk_src = {
 		.name = "disp_cc_mdss_pclk0_clk_src",
 		.parent_data = disp_cc_parent_data_6,
 		.num_parents = ARRAY_SIZE(disp_cc_parent_data_6),
-		.flags = CLK_SET_RATE_PARENT | CLK_OPS_PARENT_ENABLE,
+		.flags = CLK_SET_RATE_PARENT,
 		.ops = &clk_pixel_ops,
 	},
 };
@@ -591,7 +591,7 @@ static struct clk_rcg2 disp_cc_mdss_pclk1_clk_src = {
 		.name = "disp_cc_mdss_pclk1_clk_src",
 		.parent_data = disp_cc_parent_data_6,
 		.num_parents = ARRAY_SIZE(disp_cc_parent_data_6),
-		.flags = CLK_SET_RATE_PARENT | CLK_OPS_PARENT_ENABLE,
+		.flags = CLK_SET_RATE_PARENT,
 		.ops = &clk_pixel_ops,
 	},
 };
@@ -712,7 +712,7 @@ static struct clk_branch disp_cc_mdss_ahb_clk = {
 
 static struct clk_branch disp_cc_mdss_byte0_clk = {
 	.halt_reg = 0x2028,
-	.halt_check = BRANCH_HALT,
+	.halt_check = BRANCH_HALT_SKIP,
 	.clkr = {
 		.enable_reg = 0x2028,
 		.enable_mask = BIT(0),
@@ -730,7 +730,7 @@ static struct clk_branch disp_cc_mdss_byte0_clk = {
 
 static struct clk_branch disp_cc_mdss_byte0_intf_clk = {
 	.halt_reg = 0x202c,
-	.halt_check = BRANCH_HALT,
+	.halt_check = BRANCH_HALT_SKIP,
 	.clkr = {
 		.enable_reg = 0x202c,
 		.enable_mask = BIT(0),
@@ -748,7 +748,7 @@ static struct clk_branch disp_cc_mdss_byte0_intf_clk = {
 
 static struct clk_branch disp_cc_mdss_byte1_clk = {
 	.halt_reg = 0x2030,
-	.halt_check = BRANCH_HALT,
+	.halt_check = BRANCH_HALT_SKIP,
 	.clkr = {
 		.enable_reg = 0x2030,
 		.enable_mask = BIT(0),
@@ -766,7 +766,7 @@ static struct clk_branch disp_cc_mdss_byte1_clk = {
 
 static struct clk_branch disp_cc_mdss_byte1_intf_clk = {
 	.halt_reg = 0x2034,
-	.halt_check = BRANCH_HALT,
+	.halt_check = BRANCH_HALT_SKIP,
 	.clkr = {
 		.enable_reg = 0x2034,
 		.enable_mask = BIT(0),
@@ -1036,7 +1036,7 @@ static struct clk_branch disp_cc_mdss_non_gdsc_ahb_clk = {
 
 static struct clk_branch disp_cc_mdss_pclk0_clk = {
 	.halt_reg = 0x2004,
-	.halt_check = BRANCH_HALT,
+	.halt_check = BRANCH_HALT_SKIP,
 	.clkr = {
 		.enable_reg = 0x2004,
 		.enable_mask = BIT(0),
@@ -1054,7 +1054,7 @@ static struct clk_branch disp_cc_mdss_pclk0_clk = {
 
 static struct clk_branch disp_cc_mdss_pclk1_clk = {
 	.halt_reg = 0x2008,
-	.halt_check = BRANCH_HALT,
+	.halt_check = BRANCH_HALT_SKIP,
 	.clkr = {
 		.enable_reg = 0x2008,
 		.enable_mask = BIT(0),

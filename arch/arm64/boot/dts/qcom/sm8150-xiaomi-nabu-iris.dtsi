@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Iris/Venus additions for Xiaomi Pad 5 (nabu).
+ *
+ * This file appends to the base SM8150 and nabu device trees so that
+ * sm8150.dtsi and sm8150-xiaomi-nabu.dts remain untouched.
+ */
+
+&{/reserved-memory/ramoops@b0000000} {
+	/* Keep the complete printk console across hard resets. */
+	record-size = <0>;
+	console-size = <0x400000>;
+	ecc-size = <0>;
+};
+
+&soc {
+	venus: video-codec@aa00000 {
+		compatible = "qcom,sm8150-iris";
+		reg = <0 0x0aa00000 0 0x100000>;
+		interrupts = <GIC_SPI 174 IRQ_TYPE_LEVEL_HIGH>;
+
+		power-domains = <&videocc VENUS_GDSC>,
+				<&videocc VCODEC0_GDSC>,
+				<&videocc VCODEC1_GDSC>,
+				<&rpmhpd SM8150_CX>;
+		power-domain-names = "venus", "vcodec0", "vcodec1", "cx";
+		operating-points-v2 = <&venus_opp_table>;
+
+		clocks = <&videocc VIDEO_CC_MVSC_CORE_CLK>,
+			 <&videocc VIDEO_CC_IRIS_AHB_CLK>,
+			 <&gcc GCC_VIDEO_AXIC_CLK>,
+			 <&videocc VIDEO_CC_MVS0_CORE_CLK>,
+			 <&gcc GCC_VIDEO_AXI0_CLK>,
+			 <&videocc VIDEO_CC_MVS1_CORE_CLK>,
+			 <&gcc GCC_VIDEO_AXI1_CLK>;
+		clock-names = "core", "iface", "bus",
+			      "vcodec0_core", "vcodec0_bus",
+			      "vcodec1_core", "vcodec1_bus";
+
+		resets = <&gcc GCC_VIDEO_AXIC_CLK_BCR>,
+			 <&videocc VIDEO_CC_MVSC_CORE_CLK_BCR>,
+			 <&gcc GCC_VIDEO_AXI0_CLK_BCR>,
+			 <&gcc GCC_VIDEO_AXI1_CLK_BCR>;
+		reset-names = "bus", "core", "vcodec0_bus", "vcodec1_bus";
+
+		interconnects = <&mmss_noc MASTER_VIDEO_P0 0
+					 &mc_virt SLAVE_EBI_CH0 0>,
+				<&gem_noc MASTER_AMPSS_M0 0
+					 &config_noc SLAVE_VENUS_CFG 0>;
+		interconnect-names = "video-mem", "cpu-cfg";
+
+		/* SM8150 v2 moved VIDC stream IDs from 0x13xx to 0x23xx. */
+		iommus = <&apps_smmu 0x2300 0x60>;
+		memory-region = <&venus_mem>;
+
+		status = "disabled";
+
+		video-core0 {
+			compatible = "venus-decoder";
+		};
+
+		video-core1 {
+			compatible = "venus-encoder";
+		};
+
+		venus_opp_table: opp-table {
+			compatible = "operating-points-v2";
+
+			opp-200000000 {
+				opp-hz = /bits/ 64 <200000000>;
+				required-opps = <&rpmhpd_opp_min_svs>;
+			};
+
+			opp-240000000 {
+				opp-hz = /bits/ 64 <240000000>;
+				required-opps = <&rpmhpd_opp_low_svs>;
+			};
+
+			opp-338000000 {
+				opp-hz = /bits/ 64 <338000000>;
+				required-opps = <&rpmhpd_opp_svs>;
+			};
+
+			opp-365000000 {
+				opp-hz = /bits/ 64 <365000000>;
+				required-opps = <&rpmhpd_opp_svs_l1>;
+			};
+
+			opp-444000000 {
+				opp-hz = /bits/ 64 <444000000>;
+				required-opps = <&rpmhpd_opp_nom>;
+			};
+
+			opp-533000000 {
+				opp-hz = /bits/ 64 <533000000>;
+				required-opps = <&rpmhpd_opp_turbo>;
+			};
+		};
+	};
+};
+
+&venus {
+	firmware-name = "qcom/sm8150/xiaomi/nabu/venus.mbn";
+	status = "okay";
+};

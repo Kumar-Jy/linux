@@ -47,9 +47,6 @@ static int video_mbus_to_pix_mp(const struct v4l2_mbus_framefmt *mbus,
 	unsigned int i;
 	u32 bytesperline;
 
-	if (!alignment)
-		alignment = camss_format_get_bpl_alignment(f);
-
 	memset(pix, 0, sizeof(*pix));
 	v4l2_fill_pix_format_mplane(pix, mbus);
 	pix->pixelformat = f->pixelformat;
@@ -57,7 +54,7 @@ static int video_mbus_to_pix_mp(const struct v4l2_mbus_framefmt *mbus,
 	for (i = 0; i < pix->num_planes; i++) {
 		bytesperline = pix->width / f->hsub[i].numerator *
 			f->hsub[i].denominator * f->bpp[i] / 8;
-		bytesperline = roundup(bytesperline, alignment);
+		bytesperline = ALIGN(bytesperline, alignment);
 		pix->plane_fmt[i].bytesperline = bytesperline;
 		pix->plane_fmt[i].sizeimage = pix->height /
 				f->vsub[i].numerator * f->vsub[i].denominator *
@@ -218,35 +215,64 @@ static int video_check_format(struct camss_video *video)
 	if (ret < 0)
 		return ret;
 
-	dev_dbg(video->camss->dev,
-		"%s: format is (%ux%u %p4cc/%up field:%u), trying (%ux%u %p4cc/%up field:%u)",
-		 video->vdev.name, sd_pix->width, sd_pix->height, &sd_pix->pixelformat,
-		 sd_pix->num_planes, sd_pix->field, pix->width, pix->height, &pix->pixelformat,
-		 pix->num_planes, pix->field);
-
 	if (pix->pixelformat != sd_pix->pixelformat ||
 	    pix->height != sd_pix->height ||
 	    pix->width != sd_pix->width ||
 	    pix->num_planes != sd_pix->num_planes ||
-	    pix->field != format.fmt.pix_mp.field)
+	    pix->field != format.fmt.pix_mp.field) {
+		dev_err(video->camss->dev,
+			"Video format mismatch: video %ux%u/%p4cc planes %u field %u, subdev %ux%u/%p4cc planes %u field %u\n",
+			pix->width, pix->height, &pix->pixelformat,
+			pix->num_planes, pix->field,
+			sd_pix->width, sd_pix->height, &sd_pix->pixelformat,
+			sd_pix->num_planes, sd_pix->field);
 		return -EPIPE;
+	}
 
 	return 0;
 }
 
-static int video_prepare_streaming(struct vb2_queue *q)
+/*
+ * Stop every subdevice that precedes @stop in the video pipeline.  This is
+ * also used to unwind a partially started pipeline, in which case @stop is
+ * the subdevice whose stream-on callback failed and must not be stopped a
+ * second time.
+ */
+static int video_stop_subdevices(struct camss_video *video,
+				 const struct media_entity *stop)
 {
-	struct camss_video *video = vb2_get_drv_priv(q);
 	struct video_device *vdev = &video->vdev;
+	struct media_entity *entity = &vdev->entity;
+	struct media_pad *pad;
+	struct v4l2_subdev *subdev;
+	int first_error = 0;
 	int ret;
 
-	ret = v4l2_pipeline_pm_get(&vdev->entity);
-	if (ret < 0) {
-		dev_err(video->camss->dev, "Failed to power up pipeline: %d\n",
-			ret);
+	while (1) {
+		pad = &entity->pads[0];
+		if (!(pad->flags & MEDIA_PAD_FL_SINK))
+			break;
+
+		pad = media_pad_remote_pad_first(pad);
+		if (!pad || !is_media_entity_v4l2_subdev(pad->entity))
+			break;
+
+		entity = pad->entity;
+		if (entity == stop)
+			break;
+
+		subdev = media_entity_to_v4l2_subdev(entity);
+		ret = v4l2_subdev_call(subdev, video, s_stream, 0);
+		if (ret && ret != -ENOIOCTLCMD) {
+			dev_err(video->camss->dev,
+				"Failed to stop %s stream: %d\n",
+				subdev->name, ret);
+			if (!first_error)
+				first_error = ret;
+		}
 	}
 
-	return ret;
+	return first_error;
 }
 
 static int video_start_streaming(struct vb2_queue *q, unsigned int count)
@@ -282,8 +308,13 @@ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
 		subdev = media_entity_to_v4l2_subdev(entity);
 
 		ret = v4l2_subdev_call(subdev, video, s_stream, 1);
-		if (ret < 0 && ret != -ENOIOCTLCMD)
+		if (ret < 0 && ret != -ENOIOCTLCMD) {
+			dev_err(video->camss->dev,
+				"Failed to start %s stream: %d\n",
+				subdev->name, ret);
+			video_stop_subdevices(video, entity);
 			goto error;
+		}
 	}
 
 	return 0;
@@ -301,43 +332,13 @@ static void video_stop_streaming(struct vb2_queue *q)
 {
 	struct camss_video *video = vb2_get_drv_priv(q);
 	struct video_device *vdev = &video->vdev;
-	struct media_entity *entity;
-	struct media_pad *pad;
-	struct v4l2_subdev *subdev;
-	int ret;
 
-	entity = &vdev->entity;
-	while (1) {
-		pad = &entity->pads[0];
-		if (!(pad->flags & MEDIA_PAD_FL_SINK))
-			break;
-
-		pad = media_pad_remote_pad_first(pad);
-		if (!pad || !is_media_entity_v4l2_subdev(pad->entity))
-			break;
-
-		entity = pad->entity;
-		subdev = media_entity_to_v4l2_subdev(entity);
-
-		ret = v4l2_subdev_call(subdev, video, s_stream, 0);
-
-		if (ret) {
-			dev_err(video->camss->dev, "Video pipeline stop failed: %d\n", ret);
-			return;
-		}
-	}
+	/* Keep unwinding even if one subdevice reports a stop error. */
+	video_stop_subdevices(video, NULL);
 
 	video_device_pipeline_stop(vdev);
 
 	video->ops->flush_buffers(video, VB2_BUF_STATE_ERROR);
-}
-
-static void video_unprepare_streaming(struct vb2_queue *q)
-{
-	struct camss_video *video = vb2_get_drv_priv(q);
-	struct video_device *vdev = &video->vdev;
-
-	v4l2_pipeline_pm_put(&vdev->entity);
 }
 
 static const struct vb2_ops msm_video_vb2_q_ops = {
@@ -345,10 +346,8 @@ static const struct vb2_ops msm_video_vb2_q_ops = {
 	.buf_init        = video_buf_init,
 	.buf_prepare     = video_buf_prepare,
 	.buf_queue       = video_buf_queue,
-	.prepare_streaming = video_prepare_streaming,
 	.start_streaming = video_start_streaming,
 	.stop_streaming  = video_stop_streaming,
-	.unprepare_streaming = video_unprepare_streaming,
 };
 
 /* -----------------------------------------------------------------------------
@@ -462,7 +461,6 @@ static int video_g_fmt(struct file *file, void *fh, struct v4l2_format *f)
 
 static int __video_try_fmt(struct camss_video *video, struct v4l2_format *f)
 {
-	unsigned int alignment = video->bpl_alignment;
 	struct v4l2_pix_format_mplane *pix_mp;
 	const struct camss_format_info *fi;
 	struct v4l2_plane_pix_format *p;
@@ -495,9 +493,6 @@ static int __video_try_fmt(struct camss_video *video, struct v4l2_format *f)
 	width = pix_mp->width;
 	height = pix_mp->height;
 
-	if (!alignment)
-		alignment = camss_format_get_bpl_alignment(fi);
-
 	memset(pix_mp, 0, sizeof(*pix_mp));
 
 	pix_mp->pixelformat = fi->pixelformat;
@@ -507,7 +502,7 @@ static int __video_try_fmt(struct camss_video *video, struct v4l2_format *f)
 	for (i = 0; i < pix_mp->num_planes; i++) {
 		bpl = pix_mp->width / fi->hsub[i].numerator *
 			fi->hsub[i].denominator * fi->bpp[i] / 8;
-		bpl = roundup(bpl, alignment);
+		bpl = ALIGN(bpl, video->bpl_alignment);
 		pix_mp->plane_fmt[i].bytesperline = bpl;
 		pix_mp->plane_fmt[i].sizeimage = pix_mp->height /
 			fi->vsub[i].numerator * fi->vsub[i].denominator * bpl;
@@ -532,7 +527,7 @@ static int __video_try_fmt(struct camss_video *video, struct v4l2_format *f)
 			lines = p->sizeimage / p->bytesperline;
 
 			if (p->bytesperline < bytesperline[i])
-				p->bytesperline = roundup(bytesperline[i], alignment);
+				p->bytesperline = ALIGN(bytesperline[i], 8);
 
 			if (p->sizeimage < p->bytesperline * lines)
 				p->sizeimage = p->bytesperline * lines;
@@ -617,11 +612,64 @@ static const struct v4l2_ioctl_ops msm_vid_ioctl_ops = {
  * V4L2 file operations
  */
 
+static int video_open(struct file *file)
+{
+	struct video_device *vdev = video_devdata(file);
+	struct camss_video *video = video_drvdata(file);
+	struct v4l2_fh *vfh;
+	int ret;
+
+	mutex_lock(&video->lock);
+
+	vfh = kzalloc(sizeof(*vfh), GFP_KERNEL);
+	if (vfh == NULL) {
+		ret = -ENOMEM;
+		goto error_alloc;
+	}
+
+	v4l2_fh_init(vfh, vdev);
+	v4l2_fh_add(vfh, file);
+
+	file->private_data = vfh;
+
+	ret = v4l2_pipeline_pm_get(&vdev->entity);
+	if (ret < 0) {
+		dev_err(video->camss->dev, "Failed to power up pipeline: %d\n",
+			ret);
+		goto error_pm_use;
+	}
+
+	mutex_unlock(&video->lock);
+
+	return 0;
+
+error_pm_use:
+	v4l2_fh_release(file);
+
+error_alloc:
+	mutex_unlock(&video->lock);
+
+	return ret;
+}
+
+static int video_release(struct file *file)
+{
+	struct video_device *vdev = video_devdata(file);
+
+	vb2_fop_release(file);
+
+	v4l2_pipeline_pm_put(&vdev->entity);
+
+	file->private_data = NULL;
+
+	return 0;
+}
+
 static const struct v4l2_file_operations msm_vid_fops = {
 	.owner          = THIS_MODULE,
 	.unlocked_ioctl = video_ioctl2,
-	.open           = v4l2_fh_open,
-	.release        = vb2_fop_release,
+	.open           = video_open,
+	.release        = video_release,
 	.poll           = vb2_fop_poll,
 	.mmap		= vb2_fop_mmap,
 	.read		= vb2_fop_read,

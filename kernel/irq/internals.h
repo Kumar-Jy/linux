@@ -300,11 +300,11 @@ static inline bool irq_is_nmi(struct irq_desc *desc)
 }
 
 #ifdef CONFIG_PM_SLEEP
-void irq_pm_handle_wakeup(struct irq_desc *desc);
+bool irq_pm_handle_wakeup(struct irq_desc *desc);
 void irq_pm_install_action(struct irq_desc *desc, struct irqaction *action);
 void irq_pm_remove_action(struct irq_desc *desc, struct irqaction *action);
 #else
-static inline void irq_pm_handle_wakeup(struct irq_desc *desc) { }
+static inline bool irq_pm_handle_wakeup(struct irq_desc *desc) { return true; }
 static inline void
 irq_pm_install_action(struct irq_desc *desc, struct irqaction *action) { }
 static inline void

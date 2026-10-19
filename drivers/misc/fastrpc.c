@@ -5,9 +5,11 @@
 #include <linux/completion.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
+#include <linux/dma-map-ops.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-resv.h>
 #include <linux/idr.h>
+#include <linux/iommu.h>
 #include <linux/list.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
@@ -19,6 +21,7 @@
 #include <linux/rpmsg.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
+#include <linux/soc/qcom/pdr.h>
 #include <linux/firmware/qcom/qcom_scm.h>
 #include <uapi/misc/fastrpc.h>
 #include <linux/of_reserved_mem.h>
@@ -38,6 +41,7 @@
 #define FASTRPC_ALIGN		128
 #define FASTRPC_MAX_FDLIST	16
 #define FASTRPC_MAX_CRCLIST	64
+#define FASTRPC_PHYS(p)	((p) & 0xffffffff)
 #define FASTRPC_CTX_MAX (256)
 #define FASTRPC_INIT_HANDLE	1
 #define FASTRPC_DSP_UTILITIES_HANDLE	2
@@ -65,6 +69,7 @@
 #define INIT_FILELEN_MAX (2 * 1024 * 1024)
 #define INIT_FILE_NAMELEN_MAX (128)
 #define FASTRPC_DEVICE_NAME	"fastrpc"
+#define FASTRPC_ATTACH_PD_TIMEOUT	(15 * HZ)
 
 /* Add memory to static PD pool, protection thru XPU */
 #define ADSP_MMAP_HEAP_ADDR  4
@@ -136,7 +141,7 @@
 #define FASTRPC_POLL_MAX_TIMEOUT_US (10000)
 
 struct fastrpc_phy_page {
-	dma_addr_t addr;	/* dma address */
+	u64 addr;		/* physical address */
 	u64 size;		/* size of contiguous region */
 };
 
@@ -201,7 +206,7 @@ struct fastrpc_msg {
 	u64 ctx;		/* invoke caller context */
 	u32 handle;	/* handle to invoke */
 	u32 sc;		/* scalars structure describing the data */
-	dma_addr_t addr;	/* dma address */
+	u64 addr;		/* physical address */
 	u64 size;		/* size of contiguous region */
 };
 
@@ -224,8 +229,11 @@ struct fastrpc_buf {
 	struct dma_buf *dmabuf;
 	struct device *dev;
 	void *virt;
-	dma_addr_t dma_addr;
+	u64 phys;
 	u64 size;
+	struct iommu_domain *alias_domain;
+	dma_addr_t alias_iova;
+	size_t alias_size;
 	/* Lock for dma buf attachments */
 	struct mutex lock;
 	struct list_head attachments;
@@ -247,7 +255,7 @@ struct fastrpc_map {
 	struct dma_buf *buf;
 	struct sg_table *table;
 	struct dma_buf_attachment *attach;
-	dma_addr_t dma_addr;
+	u64 phys;
 	u64 size;
 	void *va;
 	u64 len;
@@ -326,6 +334,12 @@ struct fastrpc_channel_ctx {
 	atomic_t ctx_seq;
 	u64 dma_mask;
 	const struct fastrpc_soc_data *soc_data;
+	struct device *dev;
+	bool sdsp_iova_workaround;
+	struct pdr_handle *attach_pdr;
+	struct pdr_service *attach_pdr_service;
+	wait_queue_head_t attach_pd_wait;
+	bool attach_pd_up;
 };
 
 struct fastrpc_device {
@@ -357,24 +371,6 @@ struct fastrpc_user {
 	struct kref refcount;
 };
 
-/* Extract SMMU PA from consolidated IOVA */
-static inline dma_addr_t fastrpc_ipa_to_dma_addr(struct fastrpc_channel_ctx *cctx, dma_addr_t iova)
-{
-	if (!cctx->soc_data->sid_pos)
-		return 0;
-	return iova & GENMASK_ULL(cctx->soc_data->sid_pos - 1, 0);
-}
-
-/*
- * Prepare the consolidated iova to send to DSP by prepending the SID
- * to smmu PA at the appropriate position
- */
-static inline u64 fastrpc_sid_offset(struct fastrpc_channel_ctx *cctx,
-				     struct fastrpc_session_ctx *sctx)
-{
-	return (u64)sctx->sid << cctx->soc_data->sid_pos;
-}
-
 static void fastrpc_free_map(struct kref *ref)
 {
 	struct fastrpc_map *map;
@@ -390,12 +386,11 @@ static void fastrpc_free_map(struct kref *ref)
 
 			perm.vmid = QCOM_SCM_VMID_HLOS;
 			perm.perm = QCOM_SCM_PERM_RWX;
-			err = qcom_scm_assign_mem(map->dma_addr, map->len,
+			err = qcom_scm_assign_mem(map->phys, map->len,
 				&src_perms, &perm, 1);
 			if (err) {
-				dev_err(map->fl->sctx->dev,
-					"Failed to assign memory dma_addr %pad size 0x%llx err %d\n",
-					&map->dma_addr, map->len, err);
+				dev_err(map->fl->sctx->dev, "Failed to assign memory phys 0x%llx size 0x%llx err %d\n",
+						map->phys, map->len, err);
 				return;
 			}
 		}
@@ -463,14 +458,80 @@ static int fastrpc_map_lookup(struct fastrpc_user *fl, int fd,
 	return ret;
 }
 
+static void fastrpc_buf_unmap_sdsp_alias(struct fastrpc_buf *buf)
+{
+	if (buf->alias_domain) {
+		size_t unmapped;
+
+		unmapped = iommu_unmap(buf->alias_domain, buf->alias_iova,
+				      buf->alias_size);
+		if (unmapped != buf->alias_size)
+			dev_warn(buf->dev,
+				 "failed to fully unmap SDSP IOVA alias %pad (%zu/%zu)\n",
+				 &buf->alias_iova, unmapped, buf->alias_size);
+	}
+}
+
 static void fastrpc_buf_free(struct fastrpc_buf *buf)
 {
 	if (!buf)
 		return;
 
+	fastrpc_buf_unmap_sdsp_alias(buf);
 	dma_free_coherent(buf->dev, buf->size, buf->virt,
-			  fastrpc_ipa_to_dma_addr(buf->fl->cctx, buf->dma_addr));
+			  FASTRPC_PHYS(buf->phys));
 	kfree(buf);
+}
+
+static int fastrpc_buf_map_sdsp_alias(struct fastrpc_buf *buf, int sid)
+{
+	struct iommu_domain *domain;
+	dma_addr_t dma_addr = FASTRPC_PHYS(buf->phys);
+	dma_addr_t alias = dma_addr + ((u64)sid << 32);
+	size_t size = PAGE_ALIGN(buf->size);
+	size_t mapped = 0;
+	unsigned int prot = IOMMU_READ | IOMMU_WRITE;
+	int ret;
+
+	domain = iommu_get_domain_for_dev(buf->dev);
+	if (!domain)
+		return -ENODEV;
+
+	if (dev_is_dma_coherent(buf->dev))
+		prot |= IOMMU_CACHE;
+
+	while (mapped < size) {
+		phys_addr_t phys;
+
+		phys = iommu_iova_to_phys(domain, dma_addr + mapped);
+		if (!phys) {
+			ret = -EFAULT;
+			goto err_unmap;
+		}
+
+		ret = iommu_map(domain, alias + mapped, phys, PAGE_SIZE, prot,
+				GFP_KERNEL);
+		if (ret)
+			goto err_unmap;
+
+		mapped += PAGE_SIZE;
+	}
+
+	buf->alias_domain = domain;
+	buf->alias_iova = alias;
+	buf->alias_size = size;
+	buf->phys = alias;
+
+	dev_dbg(buf->dev, "mapped SDSP IOVA alias %pad -> %pad (%zu bytes)\n",
+		&alias, &dma_addr, size);
+
+	return 0;
+
+err_unmap:
+	if (mapped)
+		iommu_unmap(domain, alias, mapped);
+
+	return ret;
 }
 
 static int __fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
@@ -478,7 +539,7 @@ static int __fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
 {
 	struct fastrpc_buf *buf;
 
-	buf = kzalloc_obj(*buf);
+	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -488,12 +549,12 @@ static int __fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
 
 	buf->fl = fl;
 	buf->virt = NULL;
-	buf->dma_addr = 0;
+	buf->phys = 0;
 	buf->size = size;
 	buf->dev = dev;
 	buf->raddr = 0;
 
-	buf->virt = dma_alloc_coherent(dev, buf->size, &buf->dma_addr,
+	buf->virt = dma_alloc_coherent(dev, buf->size, (dma_addr_t *)&buf->phys,
 				       GFP_KERNEL);
 	if (!buf->virt) {
 		mutex_destroy(&buf->lock);
@@ -518,8 +579,17 @@ static int fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
 
 	buf = *obuf;
 
-	if (fl->sctx && fl->sctx->sid)
-		buf->dma_addr += fastrpc_sid_offset(fl->cctx, fl->sctx);
+	if (fl->sctx && fl->sctx->sid && fl->cctx->sdsp_iova_workaround) {
+		ret = fastrpc_buf_map_sdsp_alias(buf, fl->sctx->sid);
+		if (ret) {
+			dev_err(dev, "failed to map SDSP IOVA alias: %d\n", ret);
+			fastrpc_buf_free(buf);
+			*obuf = NULL;
+			return ret;
+		}
+	} else if (fl->sctx && fl->sctx->sid) {
+		buf->phys += ((u64)fl->sctx->sid << 32);
+	}
 
 	return 0;
 }
@@ -697,7 +767,7 @@ static struct fastrpc_invoke_ctx *fastrpc_context_alloc(
 	unsigned long flags;
 	int ret;
 
-	ctx = kzalloc_obj(*ctx);
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return ERR_PTR(-ENOMEM);
 
@@ -708,12 +778,14 @@ static struct fastrpc_invoke_ctx *fastrpc_context_alloc(
 		     REMOTE_SCALARS_OUTBUFS(sc);
 
 	if (ctx->nscalars) {
-		ctx->maps = kzalloc_objs(*ctx->maps, ctx->nscalars);
+		ctx->maps = kcalloc(ctx->nscalars,
+				    sizeof(*ctx->maps), GFP_KERNEL);
 		if (!ctx->maps) {
 			kfree(ctx);
 			return ERR_PTR(-ENOMEM);
 		}
-		ctx->olaps = kzalloc_objs(*ctx->olaps, ctx->nscalars);
+		ctx->olaps = kcalloc(ctx->nscalars,
+				    sizeof(*ctx->olaps), GFP_KERNEL);
 		if (!ctx->olaps) {
 			kfree(ctx->maps);
 			kfree(ctx);
@@ -805,13 +877,12 @@ static int fastrpc_dma_buf_attach(struct dma_buf *dmabuf,
 	struct fastrpc_buf *buffer = dmabuf->priv;
 	int ret;
 
-	a = kzalloc_obj(*a);
+	a = kzalloc(sizeof(*a), GFP_KERNEL);
 	if (!a)
 		return -ENOMEM;
 
 	ret = dma_get_sgtable(buffer->dev, &a->sgt, buffer->virt,
-			      fastrpc_ipa_to_dma_addr(buffer->fl->cctx, buffer->dma_addr),
-			      buffer->size);
+			      FASTRPC_PHYS(buffer->phys), buffer->size);
 	if (ret < 0) {
 		dev_err(buffer->dev, "failed to get scatterlist from DMA API\n");
 		kfree(a);
@@ -860,7 +931,7 @@ static int fastrpc_mmap(struct dma_buf *dmabuf,
 	dma_resv_assert_held(dmabuf->resv);
 
 	return dma_mmap_coherent(buf->dev, vma, buf->virt,
-				 fastrpc_ipa_to_dma_addr(buf->fl->cctx, buf->dma_addr), size);
+				 FASTRPC_PHYS(buf->phys), size);
 }
 
 static const struct dma_buf_ops fastrpc_dma_buf_ops = {
@@ -873,11 +944,6 @@ static const struct dma_buf_ops fastrpc_dma_buf_ops = {
 	.release = fastrpc_release,
 };
 
-static dma_addr_t fastrpc_compute_dma_addr(struct fastrpc_user *fl, dma_addr_t sg_dma_addr)
-{
-	return sg_dma_addr + fastrpc_sid_offset(fl->cctx, fl->sctx);
-}
-
 static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
 			      u64 len, u32 attr, struct fastrpc_map **ppmap)
 {
@@ -887,7 +953,7 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
 	struct scatterlist *sgl = NULL;
 	int err = 0, sgl_index = 0;
 
-	map = kzalloc_obj(*map);
+	map = kzalloc(sizeof(*map), GFP_KERNEL);
 	if (!map)
 		return -ENOMEM;
 
@@ -916,10 +982,12 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
 	}
 	map->table = table;
 
-	if (attr & FASTRPC_ATTR_SECUREMAP)
-		map->dma_addr = sg_phys(map->table->sgl);
-	else
-		map->dma_addr = fastrpc_compute_dma_addr(fl, sg_dma_address(map->table->sgl));
+	if (attr & FASTRPC_ATTR_SECUREMAP) {
+		map->phys = sg_phys(map->table->sgl);
+	} else {
+		map->phys = sg_dma_address(map->table->sgl);
+		map->phys += ((u64)fl->sctx->sid << 32);
+	}
 	for_each_sg(map->table->sgl, sgl, map->table->nents,
 		sgl_index)
 		map->size += sg_dma_len(sgl);
@@ -945,11 +1013,10 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
 		dst_perms[1].vmid = fl->cctx->vmperms[0].vmid;
 		dst_perms[1].perm = QCOM_SCM_PERM_RWX;
 		map->attr = attr;
-		err = qcom_scm_assign_mem(map->dma_addr, (u64)map->len, &src_perms, dst_perms, 2);
+		err = qcom_scm_assign_mem(map->phys, (u64)map->len, &src_perms, dst_perms, 2);
 		if (err) {
-			dev_err(sess->dev,
-				"Failed to assign memory with dma_addr %pad size 0x%llx err %d\n",
-				&map->dma_addr, map->len, err);
+			dev_err(sess->dev, "Failed to assign memory with phys 0x%llx size 0x%llx err %d\n",
+					map->phys, map->len, err);
 			goto map_err;
 		}
 	}
@@ -1136,7 +1203,7 @@ static int fastrpc_get_args(u32 kernel, struct fastrpc_invoke_ctx *ctx)
 			struct vm_area_struct *vma = NULL;
 
 			rpra[i].buf.pv = (u64) ctx->args[i].ptr;
-			pages[i].addr = ctx->maps[i]->dma_addr;
+			pages[i].addr = ctx->maps[i]->phys;
 
 			mmap_read_lock(current->mm);
 			vma = vma_lookup(current->mm, ctx->args[i].ptr);
@@ -1163,7 +1230,7 @@ static int fastrpc_get_args(u32 kernel, struct fastrpc_invoke_ctx *ctx)
 				goto bail;
 
 			rpra[i].buf.pv = args - ctx->olaps[oix].offset;
-			pages[i].addr = ctx->buf->dma_addr -
+			pages[i].addr = ctx->buf->phys -
 					ctx->olaps[oix].offset +
 					(pkt_size - rlen);
 			pages[i].addr = pages[i].addr &	PAGE_MASK;
@@ -1195,7 +1262,7 @@ static int fastrpc_get_args(u32 kernel, struct fastrpc_invoke_ctx *ctx)
 		list[i].num = ctx->args[i].length ? 1 : 0;
 		list[i].pgidx = i;
 		if (ctx->maps[i]) {
-			pages[i].addr = ctx->maps[i]->dma_addr;
+			pages[i].addr = ctx->maps[i]->phys;
 			pages[i].size = ctx->maps[i]->size;
 		}
 		rpra[i].dma.fd = ctx->args[i].fd;
@@ -1270,7 +1337,7 @@ static int fastrpc_invoke_send(struct fastrpc_session_ctx *sctx,
 	msg->ctx = ctx->ctxid | fl->pd;
 	msg->handle = handle;
 	msg->sc = ctx->sc;
-	msg->addr = ctx->buf ? ctx->buf->dma_addr : 0;
+	msg->addr = ctx->buf ? ctx->buf->phys : 0;
 	msg->size = roundup(ctx->msg_sz, PAGE_SIZE);
 	fastrpc_context_get(ctx);
 
@@ -1464,7 +1531,7 @@ static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
 	} inbuf;
 	u32 sc;
 
-	args = kzalloc_objs(*args, FASTRPC_CREATE_STATIC_PROCESS_NARGS);
+	args = kcalloc(FASTRPC_CREATE_STATIC_PROCESS_NARGS, sizeof(*args), GFP_KERNEL);
 	if (!args)
 		return -ENOMEM;
 
@@ -1496,15 +1563,13 @@ static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
 		if (fl->cctx->vmcount) {
 			u64 src_perms = BIT(QCOM_SCM_VMID_HLOS);
 
-			err = qcom_scm_assign_mem(fl->cctx->remote_heap->dma_addr,
+			err = qcom_scm_assign_mem(fl->cctx->remote_heap->phys,
 							(u64)fl->cctx->remote_heap->size,
 							&src_perms,
 							fl->cctx->vmperms, fl->cctx->vmcount);
 			if (err) {
-				dev_err(fl->sctx->dev,
-					"Failed to assign memory with dma_addr %pad size 0x%llx err %d\n",
-					&fl->cctx->remote_heap->dma_addr,
-					fl->cctx->remote_heap->size, err);
+				dev_err(fl->sctx->dev, "Failed to assign memory with phys 0x%llx size 0x%llx err %d\n",
+					fl->cctx->remote_heap->phys, fl->cctx->remote_heap->size, err);
 				goto err_map;
 			}
 			scm_done = true;
@@ -1522,7 +1587,7 @@ static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
 	args[1].length = inbuf.namelen;
 	args[1].fd = -1;
 
-	pages[0].addr = fl->cctx->remote_heap->dma_addr;
+	pages[0].addr = fl->cctx->remote_heap->phys;
 	pages[0].size = fl->cctx->remote_heap->size;
 
 	args[2].ptr = (u64)(uintptr_t) pages;
@@ -1551,12 +1616,12 @@ err_invoke:
 
 		dst_perms.vmid = QCOM_SCM_VMID_HLOS;
 		dst_perms.perm = QCOM_SCM_PERM_RWX;
-		err = qcom_scm_assign_mem(fl->cctx->remote_heap->dma_addr,
+		err = qcom_scm_assign_mem(fl->cctx->remote_heap->phys,
 						(u64)fl->cctx->remote_heap->size,
 						&src_perms, &dst_perms, 1);
 		if (err)
-			dev_err(fl->sctx->dev, "Failed to assign memory dma_addr %pad size 0x%llx err %d\n",
-				&fl->cctx->remote_heap->dma_addr, fl->cctx->remote_heap->size, err);
+			dev_err(fl->sctx->dev, "Failed to assign memory phys 0x%llx size 0x%llx err %d\n",
+				fl->cctx->remote_heap->phys, fl->cctx->remote_heap->size, err);
 	}
 err_map:
 	fastrpc_buf_free(fl->cctx->remote_heap);
@@ -1590,7 +1655,7 @@ static int fastrpc_init_create_process(struct fastrpc_user *fl,
 	u32 sc;
 	bool unsigned_module = false;
 
-	args = kzalloc_objs(*args, FASTRPC_CREATE_PROCESS_NARGS);
+	args = kcalloc(FASTRPC_CREATE_PROCESS_NARGS, sizeof(*args), GFP_KERNEL);
 	if (!args)
 		return -ENOMEM;
 
@@ -1646,7 +1711,7 @@ static int fastrpc_init_create_process(struct fastrpc_user *fl,
 	args[2].length = inbuf.filelen;
 	args[2].fd = init.filefd;
 
-	pages[0].addr = imem->dma_addr;
+	pages[0].addr = imem->phys;
 	pages[0].size = imem->size;
 
 	args[3].ptr = (u64)(uintptr_t) pages;
@@ -1764,7 +1829,7 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 	fdevice = miscdev_to_fdevice(filp->private_data);
 	cctx = fdevice->cctx;
 
-	fl = kzalloc_obj(*fl);
+	fl = kzalloc(sizeof(*fl), GFP_KERNEL);
 	if (!fl)
 		return -ENOMEM;
 
@@ -1843,7 +1908,28 @@ static int fastrpc_init_attach(struct fastrpc_user *fl, int pd)
 {
 	struct fastrpc_invoke_args args[1];
 	int client_id = fl->client_id;
+	long wait_ret;
 	u32 sc;
+
+	if (pd == SENSORS_PD && fl->cctx->attach_pdr &&
+	    !READ_ONCE(fl->cctx->attach_pd_up)) {
+		dev_info(fl->cctx->dev,
+			 "waiting for attach protection domain\n");
+		wait_ret = wait_event_interruptible_timeout(
+			fl->cctx->attach_pd_wait,
+			READ_ONCE(fl->cctx->attach_pd_up) ||
+			!READ_ONCE(fl->cctx->rpdev),
+			FASTRPC_ATTACH_PD_TIMEOUT);
+		if (wait_ret < 0)
+			return wait_ret;
+		if (!wait_ret) {
+			dev_err(fl->cctx->dev,
+				"timed out waiting for attach protection domain\n");
+			return -ETIMEDOUT;
+		}
+		if (!READ_ONCE(fl->cctx->rpdev))
+			return -EPIPE;
+	}
 
 	args[0].ptr = (u64)(uintptr_t) &client_id;
 	args[0].length = sizeof(client_id);
@@ -1868,7 +1954,7 @@ static int fastrpc_invoke(struct fastrpc_user *fl, char __user *argp)
 	/* nscalars is truncated here to max supported value */
 	nscalars = REMOTE_SCALARS_LENGTH(inv.sc);
 	if (nscalars) {
-		args = kzalloc_objs(*args, nscalars);
+		args = kcalloc(nscalars, sizeof(*args), GFP_KERNEL);
 		if (!args)
 			return -ENOMEM;
 
@@ -2115,7 +2201,7 @@ static int fastrpc_req_mmap(struct fastrpc_user *fl, char __user *argp)
 	args[0].ptr = (u64) (uintptr_t) &req_msg;
 	args[0].length = sizeof(req_msg);
 
-	pages.addr = buf->dma_addr;
+	pages.addr = buf->phys;
 	pages.size = buf->size;
 
 	args[1].ptr = (u64) (uintptr_t) &pages;
@@ -2143,12 +2229,11 @@ static int fastrpc_req_mmap(struct fastrpc_user *fl, char __user *argp)
 	if (req.flags == ADSP_MMAP_REMOTE_HEAP_ADDR && fl->cctx->vmcount) {
 		u64 src_perms = BIT(QCOM_SCM_VMID_HLOS);
 
-		err = qcom_scm_assign_mem(buf->dma_addr, (u64)buf->size,
+		err = qcom_scm_assign_mem(buf->phys, (u64)buf->size,
 			&src_perms, fl->cctx->vmperms, fl->cctx->vmcount);
 		if (err) {
-			dev_err(fl->sctx->dev,
-				"Failed to assign memory dma_addr %pad size 0x%llx err %d",
-				&buf->dma_addr, buf->size, err);
+			dev_err(fl->sctx->dev, "Failed to assign memory phys 0x%llx size 0x%llx err %d",
+					buf->phys, buf->size, err);
 			goto err_assign;
 		}
 	}
@@ -2262,7 +2347,7 @@ static int fastrpc_req_mem_map(struct fastrpc_user *fl, char __user *argp)
 	args[0].ptr = (u64) (uintptr_t) &req_msg;
 	args[0].length = sizeof(req_msg);
 
-	pages.addr = map->dma_addr;
+	pages.addr = map->phys;
 	pages.size = map->len;
 
 	args[1].ptr = (u64) (uintptr_t) &pages;
@@ -2510,6 +2595,100 @@ static const struct fastrpc_soc_data default_soc_data = {
 	.dma_addr_bits_default = 32,
 };
 
+static const struct of_device_id fastrpc_poll_supported_machines[] __maybe_unused = {
+	{ .compatible = "qcom,milos" },
+	{ .compatible = "qcom,qcs8300" },
+	{ .compatible = "qcom,sa8775p" },
+	{ .compatible = "qcom,sar2130p" },
+	{ .compatible = "qcom,sm8450" },
+	{ .compatible = "qcom,sm8550" },
+	{ .compatible = "qcom,sm8650" },
+	{ .compatible = "qcom,sm8750" },
+	{ .compatible = "qcom,x1e80100" },
+	{ .compatible = "qcom,x1p42100" },
+	{},
+};
+
+#if IS_REACHABLE(CONFIG_QCOM_PDR_HELPERS)
+static void fastrpc_attach_pd_status(int state, char *service_path, void *priv)
+{
+	struct fastrpc_channel_ctx *cctx = priv;
+	bool up = state == SERVREG_SERVICE_STATE_UP;
+
+	WRITE_ONCE(cctx->attach_pd_up, up);
+	wake_up_all(&cctx->attach_pd_wait);
+
+	dev_info(cctx->dev, "protection domain %s is %s (state %#x)\n",
+		 service_path, up ? "up" : "not ready", state);
+}
+
+static int fastrpc_attach_pdr_init(struct fastrpc_channel_ctx *cctx,
+				   struct device_node *node)
+{
+	const char *service_name;
+	const char *service_path;
+	int ret;
+
+	if (!of_property_present(node, "qcom,protection-domain"))
+		return 0;
+
+	ret = of_property_read_string_index(node, "qcom,protection-domain", 0,
+					    &service_name);
+	if (ret)
+		return ret;
+
+	ret = of_property_read_string_index(node, "qcom,protection-domain", 1,
+					    &service_path);
+	if (ret)
+		return ret;
+
+	cctx->attach_pdr = pdr_handle_alloc(fastrpc_attach_pd_status, cctx);
+	if (IS_ERR(cctx->attach_pdr)) {
+		ret = PTR_ERR(cctx->attach_pdr);
+		cctx->attach_pdr = NULL;
+		return dev_err_probe(cctx->dev, ret,
+				     "failed to allocate attach PDR handle\n");
+	}
+
+	cctx->attach_pdr_service = pdr_add_lookup(cctx->attach_pdr,
+						   service_name, service_path);
+	if (IS_ERR(cctx->attach_pdr_service)) {
+		ret = PTR_ERR(cctx->attach_pdr_service);
+		cctx->attach_pdr_service = NULL;
+		pdr_handle_release(cctx->attach_pdr);
+		cctx->attach_pdr = NULL;
+		return dev_err_probe(cctx->dev, ret,
+				     "failed to register attach PDR lookup\n");
+	}
+
+	dev_info(cctx->dev, "tracking protection domain %s for %s\n",
+		 service_path, service_name);
+
+	return 0;
+}
+
+static void fastrpc_attach_pdr_release(struct fastrpc_channel_ctx *cctx)
+{
+	pdr_handle_release(cctx->attach_pdr);
+	cctx->attach_pdr = NULL;
+	cctx->attach_pdr_service = NULL;
+}
+#else
+static int fastrpc_attach_pdr_init(struct fastrpc_channel_ctx *cctx,
+				   struct device_node *node)
+{
+	if (!of_property_present(node, "qcom,protection-domain"))
+		return 0;
+
+	return dev_err_probe(cctx->dev, -EOPNOTSUPP,
+			     "attach PDR support is not reachable\n");
+}
+
+static void fastrpc_attach_pdr_release(struct fastrpc_channel_ctx *cctx)
+{
+}
+#endif
+
 /*
  * Exception list for older platforms that use default_soc_data but whose
  * DSP firmware supports FastRPC polling mode.
@@ -2541,9 +2720,6 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	const char *domain;
 	bool secure_dsp;
 	unsigned int vmids[FASTRPC_MAX_VMIDS];
-	const struct fastrpc_soc_data *soc_data;
-
-	soc_data = device_get_match_data(rdev);
 
 	err = of_property_read_string(rdev->of_node, "label", &domain);
 	if (err) {
@@ -2568,7 +2744,7 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	else if (!qcom_scm_is_available())
 		return -EPROBE_DEFER;
 
-	data = kzalloc_obj(*data);
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
@@ -2601,6 +2777,17 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	data->soc_data = soc_data;
 	data->poll_mode_supported = soc_data->poll_mode_supported ||
 		of_machine_get_match(fastrpc_poll_supported_machines);
+	data->dev = rdev;
+	init_waitqueue_head(&data->attach_pd_wait);
+	data->domain_id = domain_id;
+	data->sdsp_iova_workaround = domain_id == SDSP_DOMAIN_ID &&
+					    of_machine_is_compatible("qcom,sm8150");
+	if (data->sdsp_iova_workaround)
+		dev_info(rdev, "enabling SM8150 SDSP high-IOVA workaround\n");
+
+	err = fastrpc_attach_pdr_init(data, rdev->of_node);
+	if (err)
+		goto err_free_data;
 
 	switch (domain_id) {
 	case ADSP_DOMAIN_ID:
@@ -2638,7 +2825,6 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	INIT_LIST_HEAD(&data->invoke_interrupted_mmaps);
 	spin_lock_init(&data->lock);
 	idr_init(&data->ctx_idr);
-	data->domain_id = domain_id;
 	data->rpdev = rpdev;
 	dev_set_drvdata(&rpdev->dev, data);
 
@@ -2655,6 +2841,7 @@ err_deregister_fdev:
 		misc_deregister(&data->secure_fdevice->miscdev);
 
 err_free_data:
+	fastrpc_attach_pdr_release(data);
 	kfree(data);
 	return err;
 }
@@ -2684,12 +2871,15 @@ static void fastrpc_rpmsg_remove(struct rpmsg_device *rpdev)
 	list_for_each_entry(user, &cctx->users, user)
 		fastrpc_notify_users(user);
 	spin_unlock_irqrestore(&cctx->lock, flags);
+	wake_up_all(&cctx->attach_pd_wait);
 
 	if (cctx->fdevice)
 		misc_deregister(&cctx->fdevice->miscdev);
 
 	if (cctx->secure_fdevice)
 		misc_deregister(&cctx->secure_fdevice->miscdev);
+
+	fastrpc_attach_pdr_release(cctx);
 
 	list_for_each_entry_safe(buf, b, &cctx->invoke_interrupted_mmaps, node)
 		list_del(&buf->node);
