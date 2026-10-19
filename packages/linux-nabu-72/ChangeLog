@@ -1,0 +1,16 @@
+2026-10-14 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.2.10-0:
+	- Bump to Linux 7.2.10 upstream stable
+
+2026-10-10 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.2.9-0:
+	- Bump to Linux 7.2.9 with full hardware support for the Xiaomi Pad 5 (nabu) and up-to-date security patches
+	- Package: track the 7.2 branch; package release restarted at 0
+	- Fix touch, battery, sensor, and keyboard issues
+	- Camera: Support OV13B10 rear, OV8856 front, and CN3927 autofocus
+	- Iris hardware video decoder (VAAPI)
+	- FastRPC SLPI sensors / accelerometer
+	- Audio: SM8150 machine driver with 24-bit microphone capture and I2S amplifier routing
+	- Power: PM8150B SMB5 charger driver and 15W USB-PD
+	- Touch & Stylus: Novatek NT36523 touchscreen and IDTP9418 wireless pen charging
+	- Sleep/wake grace, PSCI cpuidle suspend and Bluetooth pull-up fix

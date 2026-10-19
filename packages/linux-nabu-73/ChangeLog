@@ -1,0 +1,11 @@
+2026-10-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3-0:
+	- Initial release for Linux 7.3 with full Xiaomi Pad 5 (nabu) hardware support
+	- Iris: migrated SM8150 video decoding to upstream 7.3 VPU2 platform architecture
+	- FastRPC: updated SDSP high-IOVA translation workaround and attach PDR helpers for Linux 7.3 soc_data
+	- DRM: adapted panel blank notify worker to atomic bridge callbacks
+	- Geni serial: integrated level-triggered IRQ masking for BT stability across suspend
+	- Audio: SM8150 machine driver with 24-bit mic capture and quad CS35L41 amplifier routing
+	- Power: PM8150B BMS charger stack, LN8000, and IDTP9418 wireless stylus charging
+	- Input: Novatek NT36523 touchscreen and official Xiaomi keyboard
+	- DTS: verified sm8150-xiaomi-nabu.dtb compilation with native 7.3 dtc

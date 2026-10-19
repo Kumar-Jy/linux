@@ -11,6 +11,8 @@ on:
         default: false
   push:
     branches:
+      - 7.3
+      - 7.3-test
       - 7.2
       - 7.2-test
       - 'nabu/**'
@@ -37,7 +39,9 @@ jobs:
         id: pkg
         run: |
           ref="${{ github.ref_name }}"
-          if [[ "$ref" == *"7.2"* || "$ref" == *"72"* ]]; then
+          if [[ "$ref" == *"7.3"* || "$ref" == *"73"* ]]; then
+            package="linux-nabu-73"
+          elif [[ "$ref" == *"7.2"* || "$ref" == *"72"* ]]; then
             package="linux-nabu-72"
           elif [[ "$ref" == *"6.18"* || "$ref" == *"618"* ]]; then
             package="linux-nabu-618"
