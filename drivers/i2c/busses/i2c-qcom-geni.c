@@ -251,7 +251,10 @@ static int qcom_geni_i2c_conf(struct geni_se *se, unsigned long freq)
 	const struct geni_i2c_clk_fld *itr = gi2c->clk_fld;
 	u32 val;
 
-	writel_relaxed(gi2c->clk_idx, gi2c->se.base + SE_GENI_CLK_SEL);
+	if (of_machine_is_compatible("qcom,sm8150"))
+		writel_relaxed(0, gi2c->se.base + SE_GENI_CLK_SEL);
+	else
+		writel_relaxed(gi2c->clk_idx & CLK_SEL_MSK, gi2c->se.base + SE_GENI_CLK_SEL);
 
 	val = (itr->clk_div << CLK_DIV_SHFT) | SER_CLK_EN;
 	writel_relaxed(val, gi2c->se.base + GENI_SER_M_CLK_CFG);

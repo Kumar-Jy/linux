@@ -1089,8 +1089,10 @@ static int fastrpc_get_meta_size(struct fastrpc_invoke_ctx *ctx)
 		sizeof(struct fastrpc_invoke_buf) +
 		sizeof(struct fastrpc_phy_page)) * ctx->nscalars +
 		sizeof(u64) * FASTRPC_MAX_FDLIST +
-		sizeof(u32) * FASTRPC_MAX_CRCLIST +
-		sizeof(u32);
+		sizeof(u32) * FASTRPC_MAX_CRCLIST;
+
+	if (ctx->fl->cctx->poll_mode_supported)
+		size += sizeof(u32);
 
 	return size;
 }
@@ -1186,8 +1188,11 @@ static int fastrpc_get_args(u32 kernel, struct fastrpc_invoke_ctx *ctx)
 	list = fastrpc_invoke_buf_start(rpra, ctx->nscalars);
 	pages = fastrpc_phy_page_start(list, ctx->nscalars);
 	ctx->fdlist = (u64 *)(pages + ctx->nscalars);
-	ctx->poll_addr = (u32 *)((uintptr_t)ctx->fdlist + sizeof(u64) * FASTRPC_MAX_FDLIST +
-			     sizeof(u32) * FASTRPC_MAX_CRCLIST);
+	if (ctx->fl->cctx->poll_mode_supported)
+		ctx->poll_addr = (u32 *)((uintptr_t)ctx->fdlist + sizeof(u64) * FASTRPC_MAX_FDLIST +
+				     sizeof(u32) * FASTRPC_MAX_CRCLIST);
+	else
+		ctx->poll_addr = NULL;
 
 	args = (uintptr_t)ctx->buf->virt + metalen;
 	rlen = pkt_size - metalen;
@@ -1412,7 +1417,7 @@ static int fastrpc_wait_for_completion(struct fastrpc_invoke_ctx *ctx,
 {
 	int err;
 
-	if (ctx->is_polled) {
+	if (ctx->is_polled && ctx->poll_addr) {
 		err = poll_for_remote_response(ctx);
 		if (!err)
 			return 0;
