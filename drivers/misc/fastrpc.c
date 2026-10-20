@@ -51,6 +51,7 @@
  * in the IDL file or FastRPC framework.
  */
 #define FASTRPC_MAX_STATIC_HANDLE (20)
+#define FASTRPC_CTXID_LEGACY_MASK GENMASK(11, 4)
 #define FASTRPC_CTXID_MASK GENMASK(15, 8)
 /* Sequence number occupies bits 63:16 of the ctxid / message context */
 #define FASTRPC_CTXID_SEQ_SHIFT	16
@@ -679,7 +680,10 @@ static void fastrpc_context_free(struct kref *ref)
 	fastrpc_buf_free(ctx->buf);
 
 	spin_lock_irqsave(&cctx->lock, flags);
-	idr_remove(&cctx->ctx_idr, FIELD_GET(FASTRPC_CTXID_MASK, ctx->ctxid));
+	if (cctx->poll_mode_supported)
+		idr_remove(&cctx->ctx_idr, FIELD_GET(FASTRPC_CTXID_MASK, ctx->ctxid));
+	else
+		idr_remove(&cctx->ctx_idr, FIELD_GET(FASTRPC_CTXID_LEGACY_MASK, ctx->ctxid));
 	spin_unlock_irqrestore(&cctx->lock, flags);
 
 	kfree(ctx->maps);
@@ -819,9 +823,13 @@ static struct fastrpc_invoke_ctx *fastrpc_context_alloc(
 		spin_unlock_irqrestore(&cctx->lock, flags);
 		goto err_idr;
 	}
-	ctx->ctxid = FIELD_PREP(FASTRPC_CTXID_MASK, ret) |
-		     FIELD_PREP(FASTRPC_CTXID_SEQ_MASK,
-				(u64)atomic_inc_return(&cctx->ctx_seq));
+	if (cctx->poll_mode_supported) {
+		ctx->ctxid = FIELD_PREP(FASTRPC_CTXID_MASK, ret) |
+			     FIELD_PREP(FASTRPC_CTXID_SEQ_MASK,
+					(u64)atomic_inc_return(&cctx->ctx_seq));
+	} else {
+		ctx->ctxid = FIELD_PREP(FASTRPC_CTXID_LEGACY_MASK, ret);
+	}
 	spin_unlock_irqrestore(&cctx->lock, flags);
 
 	kref_init(&ctx->refcount);
@@ -2700,6 +2708,8 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	const struct fastrpc_soc_data *soc_data;
 
 	soc_data = device_get_match_data(rdev);
+	if (!soc_data)
+		soc_data = &default_soc_data;
 
 	err = of_property_read_string(rdev->of_node, "label", &domain);
 	if (err) {
@@ -2895,7 +2905,10 @@ static int fastrpc_rpmsg_callback(struct rpmsg_device *rpdev, void *data,
 	if (rsp->ctx == FASTRPC_DSP_PD_NOTIFY_CTX)
 		return 0;
 
-	ctxid = FIELD_GET(FASTRPC_CTXID_MASK, rsp->ctx);
+	if (cctx->poll_mode_supported)
+		ctxid = FIELD_GET(FASTRPC_CTXID_MASK, rsp->ctx);
+	else
+		ctxid = FIELD_GET(FASTRPC_CTXID_LEGACY_MASK, rsp->ctx);
 
 	spin_lock_irqsave(&cctx->lock, flags);
 	ctx = idr_find(&cctx->ctx_idr, ctxid);
@@ -2914,7 +2927,8 @@ static int fastrpc_rpmsg_callback(struct rpmsg_device *rpdev, void *data,
 	 * driver would call complete() on the wrong context, waking a thread
 	 * whose buffers are still being accessed by the DSP.
 	 */
-	if (FIELD_GET(FASTRPC_CTXID_SEQ_MASK, rsp->ctx) !=
+	if (cctx->poll_mode_supported &&
+	    FIELD_GET(FASTRPC_CTXID_SEQ_MASK, rsp->ctx) !=
 	    FIELD_GET(FASTRPC_CTXID_SEQ_MASK, ctx->ctxid)) {
 		dev_dbg(&rpdev->dev,
 			"Stale glink response ctx 0x%llx (expected seq 0x%llx), dropping\n",
