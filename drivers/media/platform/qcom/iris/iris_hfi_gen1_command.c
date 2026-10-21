@@ -53,7 +53,7 @@ static int iris_hfi_gen1_sys_image_version(struct iris_core *core)
 	return iris_hfi_queue_cmd_write_locked(core, &packet, packet.hdr.size);
 }
 
-static int iris_hfi_gen1_sys_interframe_powercollapse(struct iris_core *core)
+static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
 {
 	struct hfi_sys_set_property_pkt *pkt;
 	struct hfi_enable *hfi;
@@ -71,12 +71,17 @@ static int iris_hfi_gen1_sys_interframe_powercollapse(struct iris_core *core)
 	pkt->hdr.pkt_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
 	pkt->data[0] = HFI_PROPERTY_SYS_CODEC_POWER_PLANE_CTRL;
-	hfi->enable = true;
+	hfi->enable = enable;
 
 	ret = iris_hfi_queue_cmd_write_locked(core, pkt, pkt->hdr.size);
 	kfree(pkt);
 
 	return ret;
+}
+
+static int iris_hfi_gen1_sys_interframe_powercollapse(struct iris_core *core)
+{
+	return iris_hfi_gen1_sys_power_control(core, true);
 }
 
 static int iris_hfi_gen1_sys_pc_prep(struct iris_core *core)
@@ -97,6 +102,12 @@ static int iris_hfi_gen1_session_open(struct iris_inst *inst)
 
 	if (inst->state != IRIS_INST_DEINIT)
 		return -EALREADY;
+
+	if (inst->core->iris_platform_data->legacy_vpu5) {
+		ret = iris_hfi_gen1_sys_power_control(inst->core, false);
+		if (ret)
+			return ret;
+	}
 
 	switch (inst->codec) {
 	case V4L2_PIX_FMT_H264:

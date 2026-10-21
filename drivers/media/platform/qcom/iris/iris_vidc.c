@@ -23,6 +23,11 @@
 #define STEP_WIDTH 1
 #define STEP_HEIGHT 1
 
+static bool allow_fw_boot;
+module_param(allow_fw_boot, bool, 0644);
+MODULE_PARM_DESC(allow_fw_boot,
+		 "Allow opening the video node to boot Iris firmware");
+
 static void iris_v4l2_fh_init(struct iris_inst *inst, struct file *filp)
 {
 	if (inst->domain == ENCODER)
@@ -135,6 +140,9 @@ int iris_open(struct file *filp)
 	struct iris_inst *inst;
 	u32 session_type;
 	int ret;
+
+	if (!READ_ONCE(allow_fw_boot))
+		return -EACCES;
 
 	vdev = video_devdata(filp);
 	if (strcmp(vdev->name, "qcom-iris-decoder") == 0)

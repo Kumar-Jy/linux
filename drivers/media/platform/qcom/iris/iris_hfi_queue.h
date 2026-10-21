@@ -165,6 +165,21 @@ struct iris_hfi_queue_table_header {
 	struct iris_hfi_queue_header q_hdr[IFACEQ_NUMQ];
 };
 
+/*
+ * VPU5/HFI Gen1 predates the extended Iris queue-table header. Its
+ * firmware expects the first queue header immediately after the six common
+ * u32 fields (offset 24), with no host pointer or name in between.
+ */
+struct iris_hfi_legacy_queue_table_header {
+	u32 version;
+	u32 size;
+	u32 qhdr0_offset;
+	u32 qhdr_size;
+	u32 num_q;
+	u32 num_active_q;
+	struct iris_hfi_queue_header q_hdr[IFACEQ_NUMQ];
+};
+
 struct iris_iface_q_info {
 	struct iris_hfi_queue_header *qhdr;
 	dma_addr_t	device_addr;

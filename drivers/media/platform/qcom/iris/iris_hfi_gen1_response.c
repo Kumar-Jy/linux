@@ -79,7 +79,8 @@ static void iris_hfi_gen1_read_changed_params(struct iris_inst *inst,
 		case HFI_PROPERTY_CONFIG_BUFFER_REQUIREMENTS:
 			data_ptr += sizeof(u32);
 			bufreq = (struct hfi_buffer_requirements *)data_ptr;
-			event.buf_count = bufreq->count_min;
+			event.buf_count = inst->core->iris_platform_data->legacy_vpu5 ?
+					  bufreq->hold_count : bufreq->count_min;
 			data_ptr += sizeof(*bufreq);
 			break;
 		case HFI_INDEX_EXTRADATA_INPUT_CROP:
