@@ -1,3 +1,7 @@
+2026-10-21 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3-2:
+	- Iris: fix SM8150 dual VCODEC power sequence, OPP voltage order, and HFI queue init
+
 2026-10-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3-0:
 	- Initial release for Linux 7.3 with full Xiaomi Pad 5 (nabu) hardware support
