@@ -350,7 +350,8 @@ static int qrtr_node_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 	int rc, confirm_rx;
 
 	mutex_lock(&node->ep_lock);
-	if (!node->hello_sent && type != QRTR_TYPE_HELLO) {
+	if (!node->hello_sent && READ_ONCE(node->nid) == QRTR_EP_NID_AUTO &&
+	    type != QRTR_TYPE_HELLO) {
 		mutex_unlock(&node->ep_lock);
 		kfree_skb(skb);
 		return -EAGAIN;
@@ -397,7 +398,7 @@ static int qrtr_node_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 	if (rc && confirm_rx)
 		qrtr_tx_flow_failed(node, to->sq_node, to->sq_port);
 
-	if (rc == -EAGAIN && type == QRTR_TYPE_HELLO)
+	if (rc && type == QRTR_TYPE_HELLO)
 		schedule_delayed_work(&node->say_hello, msecs_to_jiffies(100));
 
 	return rc;
@@ -532,6 +533,10 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	skb_put_data(skb, data + hdrlen, size);
 
 	qrtr_node_assign(node, cb->src_node);
+
+	mutex_lock(&node->ep_lock);
+	node->hello_sent = true;
+	mutex_unlock(&node->ep_lock);
 
 	if (cb->type == QRTR_TYPE_NEW_SERVER) {
 		/* Remote node endpoint can bridge other distant nodes */
