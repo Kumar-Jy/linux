@@ -124,6 +124,10 @@
 
 #define SNARL_BARK_BITE_WD_CFG 0x653
 
+#define TYPE_C_SNK_STATUS 0x506
+#define SNK_RP_1P5_BIT BIT(2)
+#define SNK_RP_3P0_BIT BIT(1)
+
 #define AICL_RERUN_TIME_CFG 0x661
 #define AICL_RERUN_TIME_MASK GENMASK(1, 0)
 #define AIC_RERUN_TIME_3_SECS 0x0
@@ -397,6 +401,20 @@ static int smb_set_usbin_suspend(void *priv, bool suspend)
 	return ret;
 }
 
+/* Current advertised by a Type-C source through Rp, 0 for default USB power */
+static unsigned int smb_typec_current_ua(struct smb_chip *chip)
+{
+	unsigned int stat;
+
+	if (regmap_read(chip->regmap, chip->base + TYPE_C_SNK_STATUS, &stat))
+		return 0;
+	if (stat & SNK_RP_3P0_BIT)
+		return 3000000;
+	if (stat & SNK_RP_1P5_BIT)
+		return 1500000;
+	return 0;
+}
+
 static void smb_status_change_work(struct work_struct *work)
 {
 	unsigned int charger_type, current_ua;
@@ -461,6 +479,9 @@ static void smb_status_change_work(struct work_struct *work)
 		current_ua = SDP_CURRENT_UA;
 		break;
 	}
+
+	/* A Type-C port may offer more than its BC1.2 type implies, e.g. a laptop */
+	current_ua = max(current_ua, smb_typec_current_ua(chip));
 
 	rc = smb_set_current_limit(chip, current_ua);
 	if (rc < 0) {
