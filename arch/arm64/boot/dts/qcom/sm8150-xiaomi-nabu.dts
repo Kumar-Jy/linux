@@ -599,6 +599,8 @@
 	typec-mux@43 {
 		compatible = "fcs,fsa4480";
 		reg = <0x43>;
+		/* Not populated on this unit; keeps the PM8150B Type-C port from probing */
+		status = "disabled";
 
 		vcc-supply = <&vreg_bob>;
 
