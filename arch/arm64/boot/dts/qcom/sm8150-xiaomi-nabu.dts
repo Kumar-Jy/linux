@@ -1417,6 +1417,9 @@
 &ufs_mem_hc {
 	status = "okay";
 
+	/* Some Samsung UFS parts cannot hold the link at HS-G4 on this board */
+	limit-hs-gear = <3>;
+
 	vcc-supply = <&vreg_l10a_2p5>;
 	vcc-max-microamp = <750000>;
 	vccq-supply = <&vreg_l9a_1p2>;
