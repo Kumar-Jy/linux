@@ -133,8 +133,12 @@
 #define DCP_CURRENT_UA 1500000
 #define UNVERIFIED_CURRENT_UA 2000000
 
-/* SMB5 (PM8150b/PM7250b) registers represent current in 1/40th amp increments */
-#define CURRENT_SCALE_FACTOR 25000
+/*
+ * SMB5 (PM8150b/PM7250b) input and fast charge current limits use 50 mA
+ * steps (vendor qpnp-smb5: usb_icl and fcc step_u = 50000); the 25 mA
+ * steps are SMB2 (PMI8998).
+ */
+#define CURRENT_SCALE_FACTOR 50000
 
 enum charger_status {
 	TRICKLE_CHARGE = 0,
