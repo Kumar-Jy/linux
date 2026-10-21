@@ -250,6 +250,18 @@ out_error:
 	return ret;
 }
 
+static int fsa4480_dummy_switch_set(struct typec_switch_dev *sw,
+				    enum typec_orientation orientation)
+{
+	return 0;
+}
+
+static int fsa4480_dummy_mux_set(struct typec_mux_dev *mux,
+				 struct typec_mux_state *state)
+{
+	return 0;
+}
+
 static int fsa4480_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
@@ -279,8 +291,32 @@ static int fsa4480_probe(struct i2c_client *client)
 		return dev_err_probe(dev, ret, "Failed to get regulator\n");
 
 	ret = regmap_read(fsa->regmap, FSA4480_DEVICE_ID, &val);
-	if (ret)
-		return dev_err_probe(dev, -ENODEV, "FSA4480 not found\n");
+	if (ret) {
+		dev_info(dev, "FSA4480 not populated, registering stub typec switch/mux\n");
+
+		sw_desc.drvdata = fsa;
+		sw_desc.fwnode = dev_fwnode(dev);
+		sw_desc.set = fsa4480_dummy_switch_set;
+
+		fsa->sw = typec_switch_register(dev, &sw_desc);
+		if (IS_ERR(fsa->sw))
+			return dev_err_probe(dev, PTR_ERR(fsa->sw),
+					     "failed to register stub typec switch\n");
+
+		mux_desc.drvdata = fsa;
+		mux_desc.fwnode = dev_fwnode(dev);
+		mux_desc.set = fsa4480_dummy_mux_set;
+
+		fsa->mux = typec_mux_register(dev, &mux_desc);
+		if (IS_ERR(fsa->mux)) {
+			typec_switch_unregister(fsa->sw);
+			return dev_err_probe(dev, PTR_ERR(fsa->mux),
+					     "failed to register stub typec mux\n");
+		}
+
+		i2c_set_clientdata(client, fsa);
+		return 0;
+	}
 
 	dev_dbg(dev, "Found FSA4480 v%lu.%lu (Vendor ID = %lu)\n",
 		FIELD_GET(FSA4480_DEVICE_ID_VERSION_ID, val),
