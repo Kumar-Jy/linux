@@ -11,7 +11,7 @@ This document tracks the hardware support status and driver implementation detai
 | **Display** | 2.5K WQHD+ LCD (2560x1600 @ 120Hz) | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Novatek NT36523 DSI panel, 120Hz refresh rate, DPU vsync & KMS active |
 | **Touch** | Capacitive Multi-touch | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Novatek NT36523 SPI touchscreen (`novatek/novatek_nt36523_fw.bin`), 10-point touch |
 | **Graphics** | Adreno 640 GPU 3D Acceleration | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Mesa Turnip Vulkan 1.3 (`0x6040001`), Freedreno OpenGL 4.6, GMU firmware v2.0.261 |
-| **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU2 architecture |
+| **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 architecture |
 | **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire — known high-volume speaker cracking under investigation |
 | **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
 | **Camera (Rear)**| 13MP OmniVision OV13B10 | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | I2C `4-0010` via CCI, `msm_csiphy0` on CAMSS, CN3927 VCM autofocus, 4208x3120 capture |

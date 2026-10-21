@@ -1,7 +1,8 @@
 2026-10-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3-0:
 	- Initial release for Linux 7.3 with full Xiaomi Pad 5 (nabu) hardware support
-	- Iris: migrated SM8150 video decoding to upstream 7.3 VPU2 platform architecture
+	- QRTR: fixed outbound packet gating for internal endpoints (eliminates modem watchdog crash)
+	- Iris: ported SM8150 Xtensa VPU5 hardware sequences, HFI queues, and clock un-gating to Linux 7.3
 	- FastRPC: updated SDSP high-IOVA translation workaround and attach PDR helpers for Linux 7.3 soc_data
 	- DRM: adapted panel blank notify worker to atomic bridge callbacks
 	- Geni serial: integrated level-triggered IRQ masking for BT stability across suspend

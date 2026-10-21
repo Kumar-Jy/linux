@@ -31,8 +31,8 @@ regenerate_uki() {
         mkdir -p /etc/cmdline.d
         printf 'root=PARTLABEL=linux rw systemd.gpt_auto=no fbcon=rotate:1 fw_devlink=permissive acpi=off earlycon\n' > /etc/cmdline.d/root.conf
     else
-        sed -i -e 's/ modprobe.blacklist=venus_core,qcom_iris//' \
-               -e 's/ module_blacklist=venus_core,qcom_iris//' \
+        sed -i -e 's/ modprobe.blacklist=venus_core//' \
+               -e 's/ module_blacklist=venus_core//' \
                /etc/cmdline.d/root.conf
         if ! grep -q 'fw_devlink=permissive' /etc/cmdline.d/root.conf; then
             sed -i 's/$/ fw_devlink=permissive/' /etc/cmdline.d/root.conf
@@ -87,7 +87,7 @@ pre_upgrade() {
 
 show_changelog() {
     echo -e "\n\e[1;34m::\e[0m \e[1mlinux-nabu ($1) changelog highlights:\e[0m"
-    echo "   * Kernel: Linux 7.2.9, sm8150 baseline"
+    echo "   * Kernel: Linux 7.3.0, sm8150 baseline"
     echo "   * Display: DSI PLL lock fix on boot, PHY runtime resume, PLL bias protection"
     echo "   * UFS: DT frequency table + reset quirk for Samsung UFS"
     echo "   * FastRPC SLPI: high-IOVA alias mapping + sensor PDR registration"
