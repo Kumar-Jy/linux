@@ -1,4 +1,7 @@
 2026-10-21 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3-3:
+	- SMB5: use 50 mA current steps and Type-C Rp advertising (tvorogo)
+	- FSA4480: register stub switch when unpopulated on BQ25970 revision
 	* 7.3-2:
 	- Iris: fix SM8150 dual VCODEC power sequence, OPP voltage order, and HFI queue init
 

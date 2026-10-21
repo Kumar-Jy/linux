@@ -16,7 +16,7 @@
 
 pkgbase=linux-nabu
 pkgver=7.3
-pkgrel=2
+pkgrel=3
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux-nabu"
 license=('GPL2')
