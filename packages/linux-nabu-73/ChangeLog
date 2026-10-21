@@ -1,9 +1,16 @@
 2026-10-21 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
-	* 7.3-3:
-	- SMB5: use 50 mA current steps and Type-C Rp advertising (tvorogo)
-	- FSA4480: register stub switch when unpopulated on BQ25970 revision
-	* 7.3-2:
-	- Iris: fix SM8150 dual VCODEC power sequence, OPP voltage order, and HFI queue init
+	* 7.3.0-0:
+	- Final release for Linux 7.3.0 with complete Xiaomi Pad 5 (nabu) hardware support
+	- Graphics: bundle Adreno 640 zap shader (a640_zap.mbn) in mkinitcpio initramfs to prevent boot DRM error
+	- Wireless: depend on wireless-regdb for regulatory domain database
+	- SMB5: use 50 mA current steps and Type-C Rp advertising (PR #2 tvorogo)
+	- FSA4480: register stub switch fallback when unpopulated on BQ25970 hardware revisions
+	- Iris: SM8150 dual VCODEC power sequence, dual GDSC power domains, dual clocks, deferred OPP sequencing, zeroed queue memory
+	- FastRPC SLPI: high-IOVA alias mapping and sensor PDR registration for Linux 7.3
+	- Audio: SM8150 machine driver with 24-bit mic capture and quad CS35L41 amplifier routing
+	- Input: Novatek NT36523 touchscreen and official Xiaomi keyboard cover lid notifier
+	- Camera: OV13B10 rear + OV8856 front + CN3927 autofocus
+	- Packaging: reset to final 7.3.0-0 release versioning
 
 2026-10-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3-0:

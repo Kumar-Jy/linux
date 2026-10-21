@@ -62,6 +62,16 @@ regenerate_uki() {
         printf '\n[UKI]\nDeviceTree=/boot/dtb-linux-nabu\n' >> /etc/kernel/uki.conf
     fi
 
+    # Ensure required early GPU firmware files are present in mkinitcpio.conf FILES
+    # to avoid Adreno zap shader / GMU errors when DRM_MSM is built-in.
+    if [ -f /etc/mkinitcpio.conf ]; then
+        for fw in "/lib/firmware/qcom/a630_sqe.fw" "/lib/firmware/qcom/a640_gmu.bin" "/lib/firmware/qcom/sm8150/xiaomi/nabu/a640_zap.mbn"; do
+            if [ -f "$fw" ] && ! grep -q "$fw" /etc/mkinitcpio.conf; then
+                sed -i "/^FILES=(/ s|)| ${fw})|" /etc/mkinitcpio.conf
+            fi
+        done
+    fi
+
     mkinitcpio -P
 }
 
@@ -89,11 +99,12 @@ show_changelog() {
     echo -e "\n\e[1;34m::\e[0m \e[1mlinux-nabu ($1) changelog highlights:\e[0m"
     echo "   * Kernel: Linux 7.3.0, sm8150 baseline"
     echo "   * Display: DSI PLL lock fix on boot, PHY runtime resume, PLL bias protection"
+    echo "   * Graphics: Adreno 640 Zap shader early initramfs bundling (clean DRM boot)"
     echo "   * UFS: DT frequency table + reset quirk for Samsung UFS"
     echo "   * FastRPC SLPI: high-IOVA alias mapping + sensor PDR registration"
     echo "   * Camera & Video: OV13B10/OV8856/CN3927, Iris VPU hardware video decode"
     echo "   * Audio: SM8150 machine driver, 24-bit mic capture, CS35L41 speaker routing"
-    echo "   * Power: SMB5 USB-PD charger, Renesas IDTP9418 stylus wireless charging"
+    echo "   * Power: SMB5 USB-PD charger (50mA steps & Rp ad), FSA4480 BQ25970 fallback, wireless stylus"
     echo "   * Input: Novatek NT36523 touchscreen, Xiaomi keyboard & cover lid notifier"
     echo ""
 }

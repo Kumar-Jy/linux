@@ -15,8 +15,8 @@
 #   - Default config: arch/arm64/configs/nabu_defconfig
 
 pkgbase=linux-nabu
-pkgver=7.3
-pkgrel=3
+pkgver=7.3.0
+pkgrel=0
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux-nabu"
 license=('GPL2')
@@ -75,9 +75,8 @@ EOF
 
 _package() {
   pkgdesc="The Linux Kernel and modules for the Xiaomi Pad 5 (nabu)"
-  depends=('coreutils' 'linux-firmware-whence' 'linux-firmware-atheros' 'kmod' 'mkinitcpio>=0.7' 'ukify')
-  optdepends=('wireless-regdb: to set the correct wireless channels of your country'
-              'linux-firmware-xiaomi-nabu: camera/iris/SLPI firmware (venus.mbn, slpi_nb.mbn) - not in standard repos')
+  depends=('coreutils' 'linux-firmware-whence' 'linux-firmware-atheros' 'wireless-regdb' 'kmod' 'mkinitcpio>=0.7' 'ukify')
+  optdepends=('linux-firmware-xiaomi-nabu: camera/iris/SLPI firmware (venus.mbn, slpi_nb.mbn) - not in standard repos')
   provides=("linux=${pkgver}")
   conflicts=('linux')
   install="linux-nabu.install"

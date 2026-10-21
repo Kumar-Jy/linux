@@ -74,3 +74,36 @@ The full nabu/SM8150 stack was ported forward from the 6.18 baseline onto a pris
 - **Portability & Cleanup fixes**: Migrated out-of-tree drivers to standard `gpiod_*` APIs and removed obsolete `include/linux/of_gpio.h`; corrected DAPM audio speaker routing directly in `sm8150-xiaomi-nabu.dts` without driver workarounds; optimized IDTP9418 pen wireless charging I2C transfers with `regmap_bulk_read/write` and restricted device node permissions (0660); added safe timeout to SLIMbus QMI wait; `sm8150.dtsi` dedup + `uart13`; `q6asm.c` APR const fix; `ov8856.c` label fix; `ath10k/core.c` `#include <linux/hex.h>`; `idtp9418.c` `alarm_start_timer`; `q6asm-dai.c` `.pcm_new`
 - **Packaging**: `linux-nabu` 7.2.9-0 (`arch=('aarch64')`, kernel release `7.2.9-0-krjy`) with 774 modules and a matching `linux-nabu-headers` package
 - **Verification**: installed kernel image hashes match the local build (`Image` `8592c5d6…` / `Image.gz` `0baed5f9…`); `build/Makefile` reports `VERSION=7 PATCHLEVEL=2 SUBLEVEL=9`
+
+---
+
+## Linux 7.3 Release (7.3.0-0 Final)
+
+The complete Xiaomi Pad 5 (nabu) hardware stack has been ported to the pristine upstream **Linux 7.3.0** baseline (branch `nabu/7.3.y`). All peripherals in the hardware support matrix are fully functional.
+
+### 1. Iris VPU Hardware Video Decode & Encode (Native 7.3 Architecture)
+- Upstream 7.3 introduced the modular `qcom-iris` VPU architecture. SM8150 Iris VPU5 hardware sequences, HFI queues, and clock un-gating were adapted for dual-core VCODEC:
+  - `iris_vpu5_ops` hardware platform callbacks (`iris_vpu5_power_off_hw`, `iris_vpu5_power_on_hw`).
+  - Dual GDSC power domains (`mvs0` and `mvs1`) managed independently with proper asynchronous power sequencing.
+  - Dual clock supplies (`vcodec0_core` and `vcodec1_core`) enabled and scaled synchronously with OPP levels.
+  - Opp-table voltage ordering deferred until both GDSC power domains are operational.
+  - Zeroed HFI command and response ring memory buffers to avoid firmware assertion errors.
+  - Full hardware decode (`/dev/video16`) and encode (`/dev/video17`) verified.
+
+### 2. Charging & Board Revision Compatibility
+- **PM8150B SMB5 Charger**: Configured 50 mA fine-grained current steps (`smb5_parse_dt`) and USB Type-C Rp advertising current adoption when higher than standard USB-PD / SDP limits (PR #2).
+- **FSA4480 Type-C Audio Switch**: Added dynamic device registration fallback. For hardware units equipped with the BQ25970 charge pump revision (where FSA4480 is unpopulated on `1-0043`), a dummy switch driver is registered to prevent probe deferrals while preserving full SBU audio routing on standard LN8000 boards.
+- **Renesas IDTP9418**: Magnetic wireless stylus charging active with restricted sysfs node access.
+
+### 3. Display, GPU & Boot Stability
+- **Adreno 640 Zap Shader Bundling**: Embedded `/lib/firmware/qcom/sm8150/xiaomi/nabu/a640_zap.mbn` into the UKI initramfs via `mkinitcpio.conf` `FILES=`. Resolves the early-boot DRM `-ENOENT` zap shader load failure and eliminates GMU OOB power-management timeouts.
+- **DSI Panel & Touchscreen**: Novatek NT36523 2.5K 120Hz DSI panel and 10-point multi-touch active with automated wake-up from S2idle.
+- **Regulatory Domain Database**: `wireless-regdb` integrated as a core package dependency, enabling full country-specific 5GHz DFS channels and legal transmit power limits without firmware load errors.
+
+### 4. Audio & Sensors
+- **Audio**: Cirrus Logic quad CS35L41 amplifiers over I2S/TDM (`QUAT_TDM_RX_0`), WCD9340 MultiMedia2 24-bit mic capture.
+- **Sensors**: SLPI FastRPC sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
+
+### 5. Packaging & Verification
+- **Package**: `linux-nabu-7.3.0-0` (`arch=('aarch64')`, kernel release `7.3.0-0-krjy`).
+- **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink, permissive device links, and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.
