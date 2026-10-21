@@ -3,8 +3,10 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/pm_opp.h>
+#include <linux/pm_runtime.h>
 #include <linux/reset.h>
 
 #include "iris_core.h"
@@ -306,8 +308,8 @@ void iris_vpu_power_off_hw(struct iris_core *core)
 
 void iris_vpu_power_off(struct iris_core *core)
 {
-	iris_opp_set_rate(core->dev, 0);
 	core->iris_platform_data->vpu_ops->power_off_hw(core);
+	iris_opp_set_rate(core->dev, 0);
 	core->iris_platform_data->vpu_ops->power_off_controller(core);
 	iris_unset_icc_bw(core);
 
@@ -382,6 +384,137 @@ err_disable_power:
 	iris_disable_power_domains(core, core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN]);
 
 	return ret;
+}
+
+int iris_vpu5_power_on_controller(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_CTRL_POWER_DOMAIN];
+	u32 rst_tbl_size = core->iris_platform_data->clk_rst_tbl_size;
+	int ret, i;
+
+	ret = pm_runtime_resume_and_get(pd_dev);
+	if (ret < 0)
+		return ret;
+
+	for (i = 0; i < rst_tbl_size; i++) {
+		ret = reset_control_assert(core->resets[i].rstc);
+		if (ret)
+			goto err_disable_power;
+		usleep_range(150, 250);
+		ret = reset_control_deassert(core->resets[i].rstc);
+		if (ret)
+			goto err_disable_power;
+	}
+
+	ret = iris_prepare_enable_clock(core, IRIS_AXI1_CLK);
+	if (ret)
+		goto err_disable_power;
+
+	ret = iris_prepare_enable_clock(core, IRIS_AXI_CLK);
+	if (ret)
+		goto err_disable_bus_clock;
+
+	ret = iris_prepare_enable_clock(core, IRIS_CTRL_CLK);
+	if (ret)
+		goto err_disable_axi_clock;
+
+	return 0;
+
+err_disable_axi_clock:
+	iris_disable_unprepare_clock(core, IRIS_AXI_CLK);
+err_disable_bus_clock:
+	iris_disable_unprepare_clock(core, IRIS_AXI1_CLK);
+err_disable_power:
+	pm_runtime_put_sync(pd_dev);
+	return ret;
+}
+
+int iris_vpu5_power_off_controller(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_CTRL_POWER_DOMAIN];
+
+	iris_disable_unprepare_clock(core, IRIS_CTRL_CLK);
+	iris_disable_unprepare_clock(core, IRIS_AXI_CLK);
+	iris_disable_unprepare_clock(core, IRIS_AXI1_CLK);
+	pm_runtime_put_sync(pd_dev);
+
+	return 0;
+}
+
+int iris_vpu5_power_on_hw(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN];
+	struct device *aux_pd_dev = NULL;
+	int ret;
+
+	if (core->pmdomain_tbl->num_pds > IRIS_AUX_HW_POWER_DOMAIN)
+		aux_pd_dev = core->pmdomain_tbl->pd_devs[IRIS_AUX_HW_POWER_DOMAIN];
+
+	ret = pm_runtime_resume_and_get(pd_dev);
+	if (ret < 0)
+		return ret;
+
+	if (aux_pd_dev) {
+		ret = pm_runtime_resume_and_get(aux_pd_dev);
+		if (ret < 0)
+			goto err_disable_power;
+	}
+
+	ret = iris_prepare_enable_clock(core, IRIS_HW_AHB_CLK);
+	if (ret)
+		goto err_disable_aux_power;
+
+	if (aux_pd_dev) {
+		ret = iris_prepare_enable_clock(core, IRIS_AUX_HW_AHB_CLK);
+		if (ret)
+			goto err_disable_hw_axi_clock;
+	}
+
+	ret = iris_prepare_enable_clock(core, IRIS_HW_CLK);
+	if (ret)
+		goto err_disable_aux_hw_axi_clock;
+
+	if (aux_pd_dev) {
+		ret = iris_prepare_enable_clock(core, IRIS_AUX_HW_CLK);
+		if (ret)
+			goto err_disable_hw_clock;
+	}
+
+	return 0;
+
+err_disable_hw_clock:
+	iris_disable_unprepare_clock(core, IRIS_HW_CLK);
+err_disable_aux_hw_axi_clock:
+	if (aux_pd_dev)
+		iris_disable_unprepare_clock(core, IRIS_AUX_HW_AHB_CLK);
+err_disable_hw_axi_clock:
+	iris_disable_unprepare_clock(core, IRIS_HW_AHB_CLK);
+err_disable_aux_power:
+	if (aux_pd_dev)
+		pm_runtime_put_sync(aux_pd_dev);
+err_disable_power:
+	pm_runtime_put_sync(pd_dev);
+	return ret;
+}
+
+void iris_vpu5_power_off_hw(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN];
+	struct device *aux_pd_dev = NULL;
+
+	if (core->pmdomain_tbl->num_pds > IRIS_AUX_HW_POWER_DOMAIN)
+		aux_pd_dev = core->pmdomain_tbl->pd_devs[IRIS_AUX_HW_POWER_DOMAIN];
+
+	if (aux_pd_dev)
+		iris_disable_unprepare_clock(core, IRIS_AUX_HW_CLK);
+	iris_disable_unprepare_clock(core, IRIS_HW_CLK);
+	if (aux_pd_dev)
+		iris_disable_unprepare_clock(core, IRIS_AUX_HW_AHB_CLK);
+	iris_disable_unprepare_clock(core, IRIS_HW_AHB_CLK);
+
+	if (aux_pd_dev)
+		pm_runtime_put_sync(aux_pd_dev);
+	pm_runtime_put_sync(pd_dev);
 }
 
 int iris_vpu_set_hwmode(struct iris_core *core)
@@ -552,14 +685,22 @@ int iris_vpu_power_on(struct iris_core *core)
 	if (ret)
 		goto err_unvote_icc;
 
-	ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
-	if (ret)
-		goto err_power_off_ctrl;
+	if (!iris_vpu_uses_legacy_vpu5(core)) {
+		ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
+		if (ret)
+			goto err_power_off_ctrl;
+	}
 
 	freq = core->power.clk_freq ? core->power.clk_freq :
 				      (u32)ULONG_MAX;
 
 	iris_opp_set_rate(core->dev, freq);
+
+	if (iris_vpu_uses_legacy_vpu5(core)) {
+		ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
+		if (ret)
+			goto err_clear_opp;
+	}
 
 	iris_vpu_set_preset_registers(core);
 
@@ -569,6 +710,8 @@ int iris_vpu_power_on(struct iris_core *core)
 
 	return 0;
 
+err_clear_opp:
+	iris_opp_set_rate(core->dev, 0);
 err_power_off_ctrl:
 	core->iris_platform_data->vpu_ops->power_off_controller(core);
 err_unvote_icc:

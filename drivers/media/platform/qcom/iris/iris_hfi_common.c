@@ -121,6 +121,9 @@ int iris_hfi_pm_suspend(struct iris_core *core)
 {
 	int ret;
 
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
+
 	ret = iris_vpu_prepare_pc(core);
 	if (ret) {
 		pm_runtime_mark_last_busy(core->dev);
@@ -146,6 +149,9 @@ int iris_hfi_pm_resume(struct iris_core *core)
 {
 	const struct iris_hfi_sys_ops *ops = core->hfi_sys_ops;
 	int ret;
+
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
 
 	ret = iris_vpu_power_on(core);
 	if (ret)

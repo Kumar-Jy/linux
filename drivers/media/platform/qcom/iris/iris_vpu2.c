@@ -46,3 +46,12 @@ const struct vpu_ops iris_vpu2_ops = {
 	.calc_freq = iris_vpu2_calc_freq,
 	.set_hwmode = iris_vpu_set_hwmode,
 };
+
+const struct vpu_ops iris_vpu5_ops = {
+	.power_off_hw = iris_vpu5_power_off_hw,
+	.power_on_hw = iris_vpu5_power_on_hw,
+	.power_off_controller = iris_vpu5_power_off_controller,
+	.power_on_controller = iris_vpu5_power_on_controller,
+	.calc_freq = iris_vpu2_calc_freq,
+	.set_hwmode = iris_vpu_set_hwmode,
+};

@@ -271,6 +271,7 @@ int iris_hfi_queues_init(struct iris_core *core)
 		dev_err(core->dev, "queues alloc and map failed\n");
 		return -ENOMEM;
 	}
+	memset(core->iface_q_table_vaddr, 0, queue_size);
 
 	core->sfr_vaddr = dma_alloc_attrs(core->dev, SFR_SIZE,
 					  &core->sfr_daddr,
@@ -312,6 +313,7 @@ int iris_hfi_queues_init(struct iris_core *core)
 
 	 /* Write sfr size in first word to be used by firmware */
 	*((u32 *)core->sfr_vaddr) = SFR_SIZE;
+	wmb();
 
 	return 0;
 }
@@ -333,8 +335,10 @@ void iris_hfi_queues_deinit(struct iris_core *core)
 	core->sfr_vaddr = NULL;
 	core->sfr_daddr = 0;
 
-	queue_size = ALIGN(sizeof(struct iris_hfi_queue_table_header) +
+	queue_size = ALIGN(iris_hfi_queue_table_size(core) +
 		(IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+	if (core->iris_platform_data->legacy_vpu5)
+		queue_size = ALIGN(SFR_SIZE + queue_size, SZ_1M);
 
 	dma_free_attrs(core->dev, queue_size, core->iface_q_table_vaddr,
 		       core->iface_q_table_daddr, DMA_ATTR_WRITE_COMBINE);
