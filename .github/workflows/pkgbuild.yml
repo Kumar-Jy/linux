@@ -178,7 +178,9 @@ jobs:
           branch="${{ github.ref_name }}"
           repo="${{ github.repository }}"
 
-          if [[ "$branch" == *"7.2"* || "$branch" == *"72"* ]]; then
+          if [[ "$branch" == *"7.3"* || "$branch" == *"73"* ]]; then
+            package="linux-nabu-73"
+          elif [[ "$branch" == *"7.2"* || "$branch" == *"72"* ]]; then
             package="linux-nabu-72"
           elif [[ "$branch" == *"6.18"* || "$branch" == *"618"* ]]; then
             package="linux-nabu-618"
@@ -193,7 +195,7 @@ jobs:
           fi
 
           safe_branch="${branch//\//-}"
-          if [ "$branch" = "6.18" ] || [ "$branch" = "7.2" ]; then
+          if [ "$branch" = "6.18" ] || [ "$branch" = "7.2" ] || [ "$branch" = "7.3" ]; then
             tag="v${pkgver}-${pkgrel}"
           else
             tag="v${pkgver}-${pkgrel}-${safe_branch}"
