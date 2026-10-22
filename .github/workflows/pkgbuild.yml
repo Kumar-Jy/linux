@@ -8,7 +8,7 @@ on:
       upload_release:
         description: 'Upload the built package to a GitHub Release (tag includes kernel version)'
         type: boolean
-        default: false
+        default: true
   push:
     branches:
       - 7.3
@@ -106,9 +106,10 @@ jobs:
           mkdir -p pkg-out
           echo "::group::Building .deb (Ubuntu, branch $branch)..."
           export DTC_FLAGS="-@"
+          export LOCALVERSION=""
           make ARCH=arm64 nabu_defconfig
-          make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
-          make ARCH=arm64 DPKG_FLAGS="-d" KDEB_PKGVERSION="$version" -j$(nproc) bindeb-pkg
+          make ARCH=arm64 LOCALVERSION="" -j$(nproc) Image Image.gz modules dtbs
+          make ARCH=arm64 LOCALVERSION="" DPKG_FLAGS="-d" KDEB_PKGVERSION="$version" -j$(nproc) bindeb-pkg
           find .. -maxdepth 1 -name "*.deb" -exec mv -v {} pkg-out/ \;
           sudo chmod -R a+r pkg-out/
           echo "::endgroup::"
@@ -140,9 +141,10 @@ jobs:
               export KBUILD_BUILD_USER=builder
               export KBUILD_BUILD_HOST=fedora-build
               export DTC_FLAGS="-@"
+              export LOCALVERSION=""
               make ARCH=arm64 nabu_defconfig
-              make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
-              make ARCH=arm64 RPMOPTS="--nodeps" -j$(nproc) binrpm-pkg
+              make ARCH=arm64 LOCALVERSION="" -j$(nproc) Image Image.gz modules dtbs
+              make ARCH=arm64 LOCALVERSION="" RPMOPTS="--nodeps" -j$(nproc) binrpm-pkg
               mkdir -p /output
               find rpmbuild/RPMS -name "*.rpm" -exec cp -v {} /output/ \; 2>/dev/null || true
               find / -name "kernel-*.rpm" -exec cp -v {} /output/ \; 2>/dev/null || true
@@ -160,7 +162,7 @@ jobs:
 
   release:
     name: Release ${{ github.ref_name }}
-    if: ${{ inputs.upload_release == true }}
+    if: ${{ inputs.upload_release == true || github.event_name == 'push' }}
     needs: build
     runs-on: ubuntu-24.04-arm
     env:
