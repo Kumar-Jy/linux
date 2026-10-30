@@ -1,0 +1,40 @@
+2026-10-30 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.1-0:
+	- Linux: merge upstream stable Linux 7.3.1 (v7.3.1)
+	- Workflow: remove auto-run on push trigger and remove legacy branches in pkgbuild.yml
+	- Packaging: bump linux-nabu to 7.3.1-0 (kernel release 7.3.1-0-krjy)
+
+2026-10-30 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.0-1:
+	- Iris: fix SM8150 VPU5 runtime PM forbid and ISR interrupt clear (fixes VIDIOC_REQBUFS failures)
+	- Iris: restore Gen1 buffer requirements query (HFI_CMD_SESSION_GET_PROPERTY) and session property info handling
+	- Iris: fix internal scratch/persist buffer sizing and DPB count for VPU5 hardware decode
+	- Iris: verified H.264 and HEVC 1080p hardware decoding on SM8150 hardware
+	- Packaging: bump release to 7.3.0-1 with CONFIG_LOCALVERSION="-krjy" alignment
+
+2026-10-21 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.0-0:
+	- Final release for Linux 7.3.0 with complete Xiaomi Pad 5 (nabu) hardware support
+	- Graphics: bundle Adreno 640 zap shader (a640_zap.mbn) in mkinitcpio initramfs to prevent boot DRM error
+	- Wireless: depend on wireless-regdb for regulatory domain database
+	- SMB5: use 50 mA current steps and Type-C Rp advertising (PR #2 tvorogo)
+	- FSA4480: register stub switch fallback when unpopulated on BQ25970 hardware revisions
+	- Iris: SM8150 dual VCODEC power sequence, dual GDSC power domains, dual clocks, deferred OPP sequencing, zeroed queue memory
+	- FastRPC SLPI: high-IOVA alias mapping and sensor PDR registration for Linux 7.3
+	- Audio: SM8150 machine driver with 24-bit mic capture and quad CS35L41 amplifier routing
+	- Input: Novatek NT36523 touchscreen and official Xiaomi keyboard cover lid notifier
+	- Camera: OV13B10 rear + OV8856 front + CN3927 autofocus
+	- Packaging: reset to final 7.3.0-0 release versioning
+
+2026-10-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3-0:
+	- Initial release for Linux 7.3 with full Xiaomi Pad 5 (nabu) hardware support
+	- QRTR: fixed outbound packet gating for internal endpoints (eliminates modem watchdog crash)
+	- Iris: ported SM8150 Xtensa VPU5 hardware sequences, HFI queues, and clock un-gating to Linux 7.3
+	- FastRPC: updated SDSP high-IOVA translation workaround and attach PDR helpers for Linux 7.3 soc_data
+	- DRM: adapted panel blank notify worker to atomic bridge callbacks
+	- Geni serial: integrated level-triggered IRQ masking for BT stability across suspend
+	- Audio: SM8150 machine driver with 24-bit mic capture and quad CS35L41 amplifier routing
+	- Power: PM8150B BMS charger stack, LN8000, and IDTP9418 wireless stylus charging
+	- Input: Novatek NT36523 touchscreen and official Xiaomi keyboard
+	- DTS: verified sm8150-xiaomi-nabu.dtb compilation with native 7.3 dtc

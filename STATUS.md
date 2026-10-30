@@ -1,10 +1,21 @@
-# Xiaomi Pad 5 (nabu) Hardware Support Status
+# Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) Universal Mainline Status
 
-This document tracks the hardware support status and driver implementation details for the Xiaomi Pad 5 (**nabu**, Qualcomm Snapdragon 860 / SM8150-AC) across kernel branches (`6.14`, `6.16`, `6.18`, `7.2`, and the current `7.3` branch).
+This document tracks the hardware support status and driver implementation details for the Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) platform family on the modern Linux mainline kernel (`7.3.1` branch `sm8150/7.3.y`), including full hardware support for the Xiaomi Pad 5 (**nabu**), Microsoft Surface Duo, Sony Xperia 1/5 (Kumano), and HDK855 reference platform.
 
 ---
 
-## Hardware Support Matrix
+## Supported SM8150 Platforms
+
+- **Xiaomi Pad 5 (nabu):** `arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dts`
+- **Microsoft Surface Duo:** `arch/arm64/boot/dts/qcom/sm8150-microsoft-surface-duo.dts`
+- **Sony Xperia 1 (griffin):** `arch/arm64/boot/dts/qcom/sm8150-sony-xperia-kumano-griffin.dts`
+- **Sony Xperia 5 (bahamut):** `arch/arm64/boot/dts/qcom/sm8150-sony-xperia-kumano-bahamut.dts`
+- **Qualcomm SM8150 HDK:** `arch/arm64/boot/dts/qcom/sm8150-hdk.dts`
+- **Qualcomm SM8150 MTP:** `arch/arm64/boot/dts/qcom/sm8150-mtp.dts`
+
+---
+
+## Xiaomi Pad 5 (nabu) Hardware Support Matrix
 
 | Category | Component / Hardware | Linux 6.14 | Linux 6.16 | Linux 6.18 | Linux 7.2 | Linux 7.3 | Driver & Technical Notes |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |

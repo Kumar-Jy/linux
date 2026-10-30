@@ -33,10 +33,17 @@ jobs:
             echo "ERROR: branch '$ref' is not supported by this workflow (7.3 only)" >&2
             exit 1
           fi
-          package="linux-nabu-73"
+          if [[ "$ref" == *"sm8150"* ]]; then
+            package="linux-sm8150-73"
+            defconfig="sm8150_defconfig"
+          else
+            package="linux-nabu-73"
+            defconfig="nabu_defconfig"
+          fi
           pkgver=$(grep -m1 '^pkgver=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
           pkgrel=$(grep -m1 '^pkgrel=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
           echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "defconfig=$defconfig" >> "$GITHUB_OUTPUT"
           echo "version=${pkgver}-${pkgrel}" >> "$GITHUB_OUTPUT"
 
       - name: Install tools (Arch)
@@ -93,7 +100,8 @@ jobs:
           echo "::group::Building .deb (Ubuntu, branch $branch)..."
           export DTC_FLAGS="-@"
           export LOCALVERSION=""
-          make ARCH=arm64 nabu_defconfig
+          defconfig="${{ steps.pkg.outputs.defconfig }}"
+          make ARCH=arm64 "$defconfig"
           make ARCH=arm64 LOCALVERSION="" -j$(nproc) Image Image.gz modules dtbs
           make ARCH=arm64 LOCALVERSION="" DPKG_FLAGS="-d" KDEB_PKGVERSION="$version" -j$(nproc) bindeb-pkg
           find .. -maxdepth 1 -name "*.deb" -exec mv -v {} pkg-out/ \;
@@ -128,7 +136,8 @@ jobs:
               export KBUILD_BUILD_HOST=fedora-build
               export DTC_FLAGS="-@"
               export LOCALVERSION=""
-              make ARCH=arm64 nabu_defconfig
+              defconfig="${{ steps.pkg.outputs.defconfig }}"
+          make ARCH=arm64 "$defconfig"
               make ARCH=arm64 LOCALVERSION="" -j$(nproc) Image Image.gz modules dtbs
               make ARCH=arm64 LOCALVERSION="" RPMOPTS="--nodeps" -j$(nproc) binrpm-pkg
               mkdir -p /output
@@ -180,7 +189,11 @@ jobs:
           else
             tag="v${pkgver}-${pkgrel}-${safe_branch}"
           fi
-          title="Linux Nabu ${pkgver}-${pkgrel}"
+          if [[ "$branch" == *"sm8150"* ]]; then
+            title="Linux SM8150 ${pkgver}-${pkgrel}"
+          else
+            title="Linux Nabu ${pkgver}-${pkgrel}"
+          fi
 
           export PKGVER="$pkgver"
           export PKGREL="$pkgrel"
@@ -212,7 +225,8 @@ jobs:
               files = sorted([f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f)) and not f.startswith('.')])
               distro_files[distro] = files
 
-              zip_name = f'linux-nabu-{pkgver}-{pkgrel}-{distro}.zip'
+              pkg_prefix = 'linux-sm8150' if 'sm8150' in branch else 'linux-nabu'
+              zip_name = f'{pkg_prefix}-{pkgver}-{pkgrel}-{distro}.zip'
               zip_path = os.path.join('release-assets', zip_name)
               print(f'Compressing {len(files)} files into {zip_name}...')
               with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
@@ -222,9 +236,12 @@ jobs:
           def fmt_files(flist):
               return '<br>'.join(f'`{f}`' for f in flist) if flist else '*None*'
 
-          notes = f"""## Linux Nabu Kernel {pkgver}-{pkgrel}
+          target_title = 'SM8150' if 'sm8150' in branch else 'Nabu'
+          target_desc = 'Snapdragon 855 / SM8150 platforms' if 'sm8150' in branch else 'the **Xiaomi Pad 5 (nabu)**'
 
-          Mainline Linux kernel build for the **Xiaomi Pad 5 (nabu)** with full hardware support across **Arch Linux ARM**, **Ubuntu**, and **Fedora**.
+          notes = f"""## Linux {target_title} Kernel {pkgver}-{pkgrel}
+
+          Mainline Linux kernel build for {target_desc} with full hardware support across **Arch Linux ARM**, **Ubuntu**, and **Fedora**.
 
           - **Kernel Version:** `{pkgver}` (release `{pkgrel}`)
           - **Branch:** `{branch}`
@@ -236,9 +253,9 @@ jobs:
 
           | Distribution | Package Archive | Included Files |
           | :--- | :--- | :--- |
-          | **Arch Linux ARM** | `linux-nabu-{pkgver}-{pkgrel}-arch.zip` | {fmt_files(distro_files.get('arch', []))} |
-          | **Ubuntu (ARM64)** | `linux-nabu-{pkgver}-{pkgrel}-ubuntu.zip` | {fmt_files(distro_files.get('ubuntu', []))} |
-          | **Fedora (ARM64)** | `linux-nabu-{pkgver}-{pkgrel}-fedora.zip` | {fmt_files(distro_files.get('fedora', []))} |
+          | **Arch Linux ARM** | `{pkg_prefix}-{pkgver}-{pkgrel}-arch.zip` | {fmt_files(distro_files.get('arch', []))} |
+          | **Ubuntu (ARM64)** | `{pkg_prefix}-{pkgver}-{pkgrel}-ubuntu.zip` | {fmt_files(distro_files.get('ubuntu', []))} |
+          | **Fedora (ARM64)** | `{pkg_prefix}-{pkgver}-{pkgrel}-fedora.zip` | {fmt_files(distro_files.get('fedora', []))} |
 
           ---
 
@@ -246,19 +263,21 @@ jobs:
 
           #### Arch Linux ARM
           ```bash
-          unzip linux-nabu-{pkgver}-{pkgrel}-arch.zip -d linux-nabu
-          cd linux-nabu && sudo pacman -U *.pkg.tar.*
+          unzip {pkg_prefix}-{pkgver}-{pkgrel}-arch.zip -d {pkg_prefix}
+          cd {pkg_prefix} && sudo pacman -U *.pkg.tar.*
           ```
 
           #### Ubuntu / Debian (ARM64)
           ```bash
-          unzip linux-nabu-{pkgver}-{pkgrel}-ubuntu.zip -d linux-nabu
-          cd linux-nabu && sudo dpkg -i *.deb
+          unzip {pkg_prefix}-{pkgver}-{pkgrel}-ubuntu.zip -d {pkg_prefix}
+          cd {pkg_prefix} && sudo dpkg -i *.deb
           ```
 
           #### Fedora (ARM64)
           ```bash
-          unzip linux-nabu-{pkgver}-{pkgrel}-fedora.zip -d linux-nabu
+          unzip {pkg_prefix}-{pkgver}-{pkgrel}-fedora.zip -d {pkg_prefix}
+          cd {pkg_prefix} && sudo dnf install ./*.rpm
+          ```
           cd linux-nabu && sudo dnf install ./*.rpm
           ```
 
