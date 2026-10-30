@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# linux-nabu.install - regenerate the UKI whenever the kernel is installed/upgraded.
+# linux-sm8150.install - regenerate the UKI whenever the kernel is installed/upgraded.
 # Works for both atomic (bootc) and non-atomic (pacman -U) installs.
 
 regenerate_uki() {
@@ -16,7 +16,8 @@ regenerate_uki() {
 
     # If a PostTransaction pacman hook exists, let it regenerate the UKI cleanly
     # after depmod has updated module dependencies.
-    if [ -f /etc/pacman.d/hooks/90-linux-nabu.uki.hook ] || [ -f /usr/share/libalpm/hooks/90-linux-nabu*.hook ]; then
+    if [ -f /etc/pacman.d/hooks/90-linux-sm8150.uki.hook ] || [ -f /usr/share/libalpm/hooks/90-linux-sm8150*.hook ] || \
+       [ -f /etc/pacman.d/hooks/90-linux-nabu.uki.hook ] || [ -f /usr/share/libalpm/hooks/90-linux-nabu*.hook ]; then
         return 0
     fi
 
@@ -54,12 +55,14 @@ regenerate_uki() {
             printf '[UKI]\n' > /etc/kernel/uki.conf
         fi
     fi
+    dtb_target="/boot/dtb-linux-sm8150"
+    [ -e "$dtb_target" ] || dtb_target="/boot/dtb-linux-nabu"
     if grep -q '^DeviceTree=' /etc/kernel/uki.conf; then
-        sed -i 's|^DeviceTree=.*|DeviceTree=/boot/dtb-linux-nabu|' /etc/kernel/uki.conf
+        sed -i "s|^DeviceTree=.*|DeviceTree=${dtb_target}|" /etc/kernel/uki.conf
     elif grep -q '^\[UKI\]' /etc/kernel/uki.conf; then
-        sed -i '/^\[UKI\]/a DeviceTree=/boot/dtb-linux-nabu' /etc/kernel/uki.conf
+        sed -i "/^\[UKI\]/a DeviceTree=${dtb_target}" /etc/kernel/uki.conf
     else
-        printf '\n[UKI]\nDeviceTree=/boot/dtb-linux-nabu\n' >> /etc/kernel/uki.conf
+        printf "\n[UKI]\nDeviceTree=${dtb_target}\n" >> /etc/kernel/uki.conf
     fi
 
     # Ensure required early GPU firmware files are present in mkinitcpio.conf FILES
@@ -76,12 +79,14 @@ regenerate_uki() {
 }
 
 pre_upgrade() {
-    # 1. Preserve currently running/working UKI as arch-linux-nabu-old.efi
-    if [ -f /boot/efi/EFI/arch/arch-linux-nabu.efi ]; then
-        cp -f /boot/efi/EFI/arch/arch-linux-nabu.efi /boot/efi/EFI/arch/arch-linux-nabu-old.efi
-    fi
+    # 1. Preserve currently running/working UKI as old efi
+    for efi in /boot/efi/EFI/arch/arch-linux-sm8150.efi /boot/efi/EFI/arch/arch-linux-nabu.efi; do
+        if [ -f "$efi" ]; then
+            cp -f "$efi" "${efi%.efi}-old.efi"
+        fi
+    done
 
-    # 2. Preserve previous kernel modules so WiFi/BT/audio/touch work if booting arch-linux-nabu-old.efi
+    # 2. Preserve previous kernel modules so WiFi/BT/audio/touch work if booting old.efi
     for moddir in /usr/lib/modules/*; do
         [ -d "$moddir" ] && [ ! -L "$moddir" ] || continue
         base=$(basename "$moddir")
@@ -96,8 +101,8 @@ pre_upgrade() {
 }
 
 show_changelog() {
-    echo -e "\n\e[1;34m::\e[0m \e[1mlinux-nabu ($1) changelog highlights:\e[0m"
-    echo "   * Kernel: Linux 7.3.1, sm8150 baseline"
+    echo -e "\n\e[1;34m::\e[0m \e[1mlinux-sm8150 ($1) changelog highlights:\e[0m"
+    echo "   * Kernel: Linux 7.3.1, SM8150 universal mainline baseline"
     echo "   * Display: DSI PLL lock fix on boot, PHY runtime resume, PLL bias protection"
     echo "   * Graphics: Adreno 640 Zap shader early initramfs bundling (clean DRM boot)"
     echo "   * UFS: DT frequency table + reset quirk for Samsung UFS"

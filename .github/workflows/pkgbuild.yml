@@ -237,7 +237,27 @@ jobs:
               return '<br>'.join(f'`{f}`' for f in flist) if flist else '*None*'
 
           target_title = 'SM8150' if 'sm8150' in branch else 'Nabu'
-          target_desc = 'Snapdragon 855 / SM8150 platforms' if 'sm8150' in branch else 'the **Xiaomi Pad 5 (nabu)**'
+          target_desc = 'Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) devices' if 'sm8150' in branch else 'the **Xiaomi Pad 5 (nabu)**'
+
+          if 'sm8150' in branch:
+              hw_support = """### ✨ Universal SM8150 Hardware Support Built-in
+          - **SoC Architecture:** Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) unified mainline baseline (`sm8150_defconfig`)
+          - **Graphics & Display:** Adreno 640 GPU (Turnip Vulkan 1.3 / Freedreno OpenGL 4.6) & MSM DRM KMS
+          - **Hardware Video Acceleration:** Qualcomm Iris VPU hardware video decode (H.264/HEVC/VP9) & encode
+          - **Audio & DSP:** Hexagon QDSP6 audio APR services, SLIMbus & native soundwire/codec interfaces
+          - **Storage:** Inline crypto engine (UFS ICE) bypass & gear-tuned link training
+          - **Sensors & Compute:** Snapdragon SLPI FastRPC sensor island with high-IOVA SMMU translation
+          - **Power Management:** PSCI cpuidle deep suspend (s2idle), RPMh power domains & PM8150 / PM8150B / PM8150L PMICs
+          - **Supported Platforms:** Xiaomi Pad 5 (nabu), Microsoft Surface Duo, Sony Xperia 1/5 (Kumano), Qualcomm HDK855 / MTP"""
+          else:
+              hw_support = """### ✨ Hardware Support Built-in
+          - **Display & Touch:** 2.5K WQHD+ 120Hz Novatek NT36523 DSI panel + 10-point multi-touch & Xiaomi Smart Pen
+          - **Audio:** Cirrus Logic quad CS35L41 stereo smart amplifiers & WCD9340 24-bit mic capture
+          - **Video & Graphics:** Adreno 640 GPU 3D acceleration & Iris VPU hardware video decoding
+          - **Charging & Battery:** PM8150B SMB5 charger driver (15W USB-PD / DCP) & Renesas IDTP9418 wireless stylus charging
+          - **Sensors:** Snapdragon SLPI FastRPC sensor island (accelerometer, gyroscope, ambient light sensor)
+          - **Power Management:** Deep sleep (s2idle suspend/resume) & Bluetooth sleep IRQ isolation
+          - **Peripherals:** Official Xiaomi magnetic keyboard cover (DWC3 secondary USB host) & cover lid hall sensor"""
 
           notes = f"""## Linux {target_title} Kernel {pkgver}-{pkgrel}
 
@@ -278,19 +298,10 @@ jobs:
           unzip {pkg_prefix}-{pkgver}-{pkgrel}-fedora.zip -d {pkg_prefix}
           cd {pkg_prefix} && sudo dnf install ./*.rpm
           ```
-          cd linux-nabu && sudo dnf install ./*.rpm
-          ```
 
           ---
 
-          ### ✨ Hardware Support Built-in
-          - **Display & Touch:** 120Hz refresh rate, Novatek NT36523 touchscreen + stylus pen
-          - **Audio:** Quad speaker routing (Cirrus CS35L41 amplifiers) & 24-bit mic capture
-          - **Video:** Qualcomm Iris VPU hardware video decoding
-          - **Charging & Battery:** PM8150B SMB5 charger driver (15W USB-PD) + Renesas IDTP9418 wireless stylus charger
-          - **Sensors:** Snapdragon SLPI FastRPC sensor island (accelerometer, ambient light, gyroscope)
-          - **Power Management:** Deep sleep, PSCI cpuidle suspend, Bluetooth pull-up fix
-          - **Peripherals:** Official Xiaomi magnetic keyboard & cover lid hall sensor
+          {hw_support}
           """
 
           notes = inspect.cleandoc(notes)

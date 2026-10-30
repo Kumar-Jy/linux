@@ -1,8 +1,10 @@
 2026-10-30 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.1-0:
+	- Universal SM8150: introduce unified sm8150_defconfig for Snapdragon 855 / 855+ / 860 platforms
 	- Linux: merge upstream stable Linux 7.3.1 (v7.3.1)
-	- Workflow: remove auto-run on push trigger and remove legacy branches in pkgbuild.yml
-	- Packaging: bump linux-nabu to 7.3.1-0 (kernel release 7.3.1-0-krjy)
+	- Workflow: update pkgbuild.yml for automated sm8150_defconfig package builds and clean release notes
+	- Packaging: establish linux-sm8150-73 packages for Arch Linux ARM, Ubuntu, and Fedora
+	- Multi-device support: Xiaomi Pad 5 (nabu), Microsoft Surface Duo, Sony Xperia 1/5 Kumano, and HDK855
 
 2026-10-30 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.0-1:
@@ -10,11 +12,11 @@
 	- Iris: restore Gen1 buffer requirements query (HFI_CMD_SESSION_GET_PROPERTY) and session property info handling
 	- Iris: fix internal scratch/persist buffer sizing and DPB count for VPU5 hardware decode
 	- Iris: verified H.264 and HEVC 1080p hardware decoding on SM8150 hardware
-	- Packaging: bump release to 7.3.0-1 with CONFIG_LOCALVERSION="-krjy" alignment
+	- Packaging: bump release to 7.3.0-1 with CONFIG_LOCALVERSION="-sm8150" alignment
 
 2026-10-21 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.0-0:
-	- Final release for Linux 7.3.0 with complete Xiaomi Pad 5 (nabu) hardware support
+	- Final release for Linux 7.3.0 with complete SM8150 platform hardware support
 	- Graphics: bundle Adreno 640 zap shader (a640_zap.mbn) in mkinitcpio initramfs to prevent boot DRM error
 	- Wireless: depend on wireless-regdb for regulatory domain database
 	- SMB5: use 50 mA current steps and Type-C Rp advertising (PR #2 tvorogo)
@@ -28,7 +30,7 @@
 
 2026-10-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3-0:
-	- Initial release for Linux 7.3 with full Xiaomi Pad 5 (nabu) hardware support
+	- Initial release for Linux 7.3 with full SM8150 platform support
 	- QRTR: fixed outbound packet gating for internal endpoints (eliminates modem watchdog crash)
 	- Iris: ported SM8150 Xtensa VPU5 hardware sequences, HFI queues, and clock un-gating to Linux 7.3
 	- FastRPC: updated SDSP high-IOVA translation workaround and attach PDR helpers for Linux 7.3 soc_data

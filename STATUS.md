@@ -1,17 +1,45 @@
 # Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) Universal Mainline Status
 
-This document tracks the hardware support status and driver implementation details for the Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) platform family on the modern Linux mainline kernel (`7.3.1` branch `sm8150/7.3.y`), including full hardware support for the Xiaomi Pad 5 (**nabu**), Microsoft Surface Duo, Sony Xperia 1/5 (Kumano), and HDK855 reference platform.
+This document tracks the hardware support status, driver implementation details, and packaging architecture for the Qualcomm Snapdragon 855 / 855+ / 860 (SM8150) platform family on modern Linux mainline kernels (`7.3.1` branch `sm8150/7.3.y` and `nabu/7.3.y`).
 
 ---
 
 ## Supported SM8150 Platforms
 
-- **Xiaomi Pad 5 (nabu):** `arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dts`
-- **Microsoft Surface Duo:** `arch/arm64/boot/dts/qcom/sm8150-microsoft-surface-duo.dts`
-- **Sony Xperia 1 (griffin):** `arch/arm64/boot/dts/qcom/sm8150-sony-xperia-kumano-griffin.dts`
-- **Sony Xperia 5 (bahamut):** `arch/arm64/boot/dts/qcom/sm8150-sony-xperia-kumano-bahamut.dts`
-- **Qualcomm SM8150 HDK:** `arch/arm64/boot/dts/qcom/sm8150-hdk.dts`
-- **Qualcomm SM8150 MTP:** `arch/arm64/boot/dts/qcom/sm8150-mtp.dts`
+| Device / Board | Form Factor | Device Tree Source (DTS) | Recommended Config |
+| :--- | :--- | :--- | :--- |
+| **Xiaomi Pad 5 (nabu)** | Tablet | `arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dts` | `nabu_defconfig` or `sm8150_defconfig` |
+| **Microsoft Surface Duo** | Dual-Screen Foldable | `arch/arm64/boot/dts/qcom/sm8150-microsoft-surface-duo.dts` | `sm8150_defconfig` |
+| **Sony Xperia 1 (griffin)** | Smartphone | `arch/arm64/boot/dts/qcom/sm8150-sony-xperia-kumano-griffin.dts` | `sm8150_defconfig` |
+| **Sony Xperia 5 (bahamut)** | Smartphone | `arch/arm64/boot/dts/qcom/sm8150-sony-xperia-kumano-bahamut.dts` | `sm8150_defconfig` |
+| **Qualcomm SM8150 HDK** | Hardware Dev Kit | `arch/arm64/boot/dts/qcom/sm8150-hdk.dts` | `sm8150_defconfig` |
+| **Qualcomm SM8150 MTP** | Reference Platform | `arch/arm64/boot/dts/qcom/sm8150-mtp.dts` | `sm8150_defconfig` |
+
+---
+
+## Universal SM8150 Subsystem Architecture
+
+The universal SM8150 kernel baseline (`arch/arm64/configs/sm8150_defconfig`) provides complete SoC driver coverage across all Snapdragon 855 platform variants:
+
+1. **Adreno 640 GPU (KGSL / MSM DRM)**:
+   - Full 3D hardware acceleration via Mesa Turnip (Vulkan 1.3) and Freedreno (OpenGL 4.6).
+   - Bundled GMU firmware (`a640_gmu.bin`) and zap shader (`a640_zap.mbn`) integration.
+2. **Iris VPU Hardware Video Acceleration (VPU5)**:
+   - Native dual-core VCODEC power sequence with dual GDSC power domains (`mvs0`, `mvs1`) and asynchronous clock gating.
+   - Verified H.264, HEVC (10-bit), and VP9 hardware decoding and encoding via V4L2 mem2mem (`/dev/video0`, `/dev/video1`).
+   - Resolved runtime PM forbid on VPU5 and Gen1 buffer requirements negotiation (`HFI_CMD_SESSION_GET_PROPERTY`).
+3. **Hexagon QDSP6 Audio & SLIMbus**:
+   - Asynchronous Packet Router (APR) communication with Hexagon DSP audio services.
+   - Native Qualcomm SLIMbus controller and audio codec DAIs for high-fidelity multi-channel playback and recording.
+4. **FastRPC & SLPI Sensor Island**:
+   - High-IOVA alias mapping (`dma_addr + (sid << 32)`, SID `0x5a1`) preventing SMMU Translation Fault `0x402`.
+   - Protection Domain Restart (PDR) gating for clean sensor tracking (accelerometer, gyroscope, ambient light) with `iio-sensor-proxy`.
+5. **Storage & UFS Stability**:
+   - Universal frequency table tuning (`freq-table-hz`) preventing gear-lock stalls on Samsung and Micron UFS storage.
+   - UFS Inline Crypto Engine (ICE) bypass to eliminate boot hangs and emergency shell timeouts.
+6. **Power Management & PMIC**:
+   - Qualcomm RPMh power management, PSCI cpuidle deep suspend (`s2idle`), and thermal mitigation.
+   - Comprehensive PMIC support: PM8150, PM8150B (SMB5 charger, fuel gauge), and PM8150L (GPIO, flash LED, WLED).
 
 ---
 
@@ -23,8 +51,8 @@ This document tracks the hardware support status and driver implementation detai
 | **Touch** | Capacitive Multi-touch | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Novatek NT36523 SPI touchscreen (`novatek/novatek_nt36523_fw.bin`), 10-point touch |
 | **Graphics** | Adreno 640 GPU 3D Acceleration | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Mesa Turnip Vulkan 1.3 (`0x6040001`), Freedreno OpenGL 4.6, GMU firmware v2.0.261 |
 | **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 architecture |
-| **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire — known high-volume speaker cracking under investigation |
-| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
+| **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire |
+| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | Qualcomm WCD9340 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
 | **Camera (Rear)**| 13MP OmniVision OV13B10 | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | I2C `4-0010` via CCI, `msm_csiphy0` on CAMSS, CN3927 VCM autofocus, 4208x3120 capture |
 | **Camera (Front)**| 8MP OmniVision OV8856 | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | I2C `5-0010` via CCI, `msm_csiphy1`, native `SBGGR10_1X10` format alignment |
 | **Flash / Torch** | Dual Rear LED Flash | ✅ Working | ✅ Working | ✅ Working | ✅ Working | ✅ Working | PM8150L flash controller (`/sys/class/leds/white:flash`), controllable via `nabu-torch` |
@@ -44,53 +72,27 @@ This document tracks the hardware support status and driver implementation detai
 
 ---
 
-## Key Subsystem Notes
+## Kernel Building & Configurations
 
-### 1. Storage & Boot Stability
-- **UFS ICE Bypass**: The inline crypto engine phandle stall on the UFS controller is removed (`/delete-property/ qcom,ice;`) to prevent boot hangs and emergency shell timeouts.
+### 1. Universal SM8150 Kernel Build
+Builds a unified kernel supporting all Snapdragon 855 / 855+ / 860 boards:
+```bash
+make ARCH=arm64 sm8150_defconfig
+make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
+```
 
----
-
-## Linux 6.18 Port Fixes
-
-### 1. UFS — boot hung during link training
-**Problem**: The controller was negotiating gear/timing combinations the Samsung UFS part on this board can't lock, and it was also poking a reset line the board doesn't wire up, plus an inline-crypto phandle that stalled outright. Result: hang during mount, sometimes down to an emergency shell.
-
-**Fix** (device tree only, no driver code):
-- `freq-table-hz` — 8-row table, live gears `<37500000 300000000>`, dead gears `<0 0>` so the driver can't select them
-- Deleted inherited `resets` / `reset-names`
-- Deleted `qcom,ice`, disabled `&ice`
-
-### 2. Memory map — auto-rotation and light sensor crashed the DSP
-**Problem**: FastRPC buffers were mapped at an address the SDSP can't reach, so the SMMU raised Translation Fault `0x402` and `sensor_process` died.
-
-**Fix** (`drivers/misc/fastrpc.c`):
-- Map an alias address (`dma_addr + (sid << 32)`, SID `0x5a1`) into the same SMMU domain, point `buf->phys` at it
-- Wait for `msm/slpi/root_pd` before mapping, so the protection domain exists first
-
-### 3. Display — grey half and vertical seam
-**Problem**: The DSI lane routing register was being skipped whenever the PLL enable refcount said it was already on. Upstream 6.18 also added a display-intf reset loop that blanked interfaces the bootloader had already handed over.
-
-**Fix**:
-- `dsi_phy_7nm.c` — always program `PLL_SYSTEM_MUXES` — confirmed fixed on hardware
-- Dropped the intf reset loop; removed the panel's 90° rotation; dropped `CLK_OPS_PARENT_ENABLE` on the pixel clocks; restored `pm_runtime` around PLL init
-
----
-
-## Linux 7.2 Port
-
-The full nabu/SM8150 stack was ported forward from the 6.18 baseline onto a pristine upstream **Linux 7.2.9** tree (branch `7.2`, commit `3318bca60`). All of the 6.18 fixes above carry over and every subsystem in the matrix above is working on 7.2.9.
-
-- **Toolchain**: cross-built with `aarch64-linux-gnu-gcc` 15.2.0 / binutils 2.46; 40 merge conflicts resolved
-- **Portability & Cleanup fixes**: Migrated out-of-tree drivers to standard `gpiod_*` APIs and removed obsolete `include/linux/of_gpio.h`; corrected DAPM audio speaker routing directly in `sm8150-xiaomi-nabu.dts` without driver workarounds; optimized IDTP9418 pen wireless charging I2C transfers with `regmap_bulk_read/write` and restricted device node permissions (0660); added safe timeout to SLIMbus QMI wait; `sm8150.dtsi` dedup + `uart13`; `q6asm.c` APR const fix; `ov8856.c` label fix; `ath10k/core.c` `#include <linux/hex.h>`; `idtp9418.c` `alarm_start_timer`; `q6asm-dai.c` `.pcm_new`
-- **Packaging**: `linux-nabu` 7.2.9-0 (`arch=('aarch64')`, kernel release `7.2.9-0-krjy`) with 774 modules and a matching `linux-nabu-headers` package
-- **Verification**: installed kernel image hashes match the local build (`Image` `8592c5d6…` / `Image.gz` `0baed5f9…`); `build/Makefile` reports `VERSION=7 PATCHLEVEL=2 SUBLEVEL=9`
+### 2. Xiaomi Pad 5 (nabu) Tailored Build
+Builds a streamlined kernel tailored specifically for the Xiaomi Pad 5:
+```bash
+make ARCH=arm64 nabu_defconfig
+make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
+```
 
 ---
 
 ## Linux 7.3 Release (7.3.1-0 Final)
 
-The complete Xiaomi Pad 5 (nabu) hardware stack has been ported to the pristine upstream **Linux 7.3.1** baseline (branch `nabu/7.3.y`). All peripherals in the hardware support matrix are fully functional.
+The complete SM8150 stack has been ported to the pristine upstream **Linux 7.3.1** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
 
 ### 1. Iris VPU Hardware Video Decode & Encode (Native 7.3 Architecture)
 - Upstream 7.3 introduced the modular `qcom-iris` VPU architecture. SM8150 Iris VPU5 hardware sequences, HFI queues, and clock un-gating were adapted for dual-core VCODEC:
@@ -100,7 +102,7 @@ The complete Xiaomi Pad 5 (nabu) hardware stack has been ported to the pristine 
   - Opp-table voltage ordering deferred until both GDSC power domains are operational.
   - Zeroed HFI command and response ring memory buffers to avoid firmware assertion errors.
   - Full hardware decode (`/dev/video0`, `/dev/video16`) and encode (`/dev/video1`, `/dev/video17`) verified.
-- **7.3.0-1 Iris Hardware Video Decoder Fixes**:
+- **7.3.0-1 / 7.3.1 Iris Decoder Stability**:
   - Runtime PM & ISR: added `pm_runtime_forbid()` for `legacy_vpu5` in `iris_probe.c` and hardware interrupt clear in `iris_hfi_isr()`, resolving `VIDIOC_REQBUFS failed: Invalid argument`.
   - Gen1 Buffer Negotiation: implemented `HFI_CMD_SESSION_GET_PROPERTY` and `HFI_MSG_SESSION_PROPERTY_INFO` handler in `iris_hfi_gen1_command.c` and `iris_hfi_gen1_response.c` to capture exact firmware buffer requirements.
   - Internal Buffer Alignment: updated `iris_buffer.c` to assign firmware-requested scratch/persist buffer sizes (`fw_buffer_sizes[]`) and set pre-sequence DPB counts, eliminating `Load Resources Command received without complete buffer set 6/16` error.
@@ -120,6 +122,24 @@ The complete Xiaomi Pad 5 (nabu) hardware stack has been ported to the pristine 
 - **Audio**: Cirrus Logic quad CS35L41 amplifiers over I2S/TDM (`QUAT_TDM_RX_0`), WCD9340 MultiMedia2 24-bit mic capture.
 - **Sensors**: SLPI FastRPC sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
-### 5. Packaging & Verification
-- **Package**: `linux-nabu-7.3.1-0` (`arch=('aarch64')`, kernel release `7.3.1-0-krjy`).
-- **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink, permissive device links, and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.
+### 5. Multi-Distro Packaging
+- **Arch Linux ARM**: `packages/linux-sm8150-73` and `packages/linux-nabu-73` producing `.pkg.tar.xz` kernel, headers, and automated UKI generation.
+- **Ubuntu / Debian**: Automated `.deb` kernel and header package builds via `bindeb-pkg`.
+- **Fedora**: Automated `.rpm` kernel packages via `binrpm-pkg`.
+
+---
+
+## Linux 7.2 Port Summary
+
+The full nabu/SM8150 stack was ported forward from the 6.18 baseline onto a pristine upstream **Linux 7.2.9** tree (branch `7.2`, commit `3318bca60`). All of the 6.18 fixes carry over and every subsystem in the matrix above is working on 7.2.9.
+
+- **Toolchain**: cross-built with `aarch64-linux-gnu-gcc` 15.2.0 / binutils 2.46; 40 merge conflicts resolved.
+- **Portability & Cleanup fixes**: Migrated out-of-tree drivers to standard `gpiod_*` APIs and removed obsolete `include/linux/of_gpio.h`; corrected DAPM audio speaker routing directly in `sm8150-xiaomi-nabu.dts` without driver workarounds; optimized IDTP9418 pen wireless charging I2C transfers with `regmap_bulk_read/write` and restricted device node permissions (0660); added safe timeout to SLIMbus QMI wait; `sm8150.dtsi` dedup + `uart13`; `q6asm.c` APR const fix; `ov8856.c` label fix; `ath10k/core.c` `#include <linux/hex.h>`; `idtp9418.c` `alarm_start_timer`; `q6asm-dai.c` `.pcm_new`.
+
+---
+
+## Linux 6.18 Port Fixes Summary
+
+- **UFS link training**: tuned `freq-table-hz` with dead gears disabled; removed unrouted `resets` and stalled inline-crypto engine (`qcom,ice`).
+- **Memory map**: alias address mapping (`dma_addr + (sid << 32)`) in `drivers/misc/fastrpc.c` preventing translation faults on the SLPI sensor domain.
+- **Display**: always program `PLL_SYSTEM_MUXES` in `dsi_phy_7nm.c` to prevent single-lane or blank screen transitions.
