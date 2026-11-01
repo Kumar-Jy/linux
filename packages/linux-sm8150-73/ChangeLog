@@ -1,3 +1,12 @@
+2026-11-01 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.1-1:
+	- Power: restore 300ms hardware timer s2idle grace window to prevent immediate wakeups from power button release
+	- Input: hook pm_s2idle_set_wake_irq for PM8941 power key driver
+	- Peripherals: preserve active pinctrl across screen blank in xiaomi_keyboard to prevent I2C interrupt freeze
+	- DTS: add qcom,s2idle-wake-grace property to pon_pwrkey in sm8150-xiaomi-nabu.dts
+	- DTS: clean up board model name in sm8150-xiaomi-nabu-camera.dtsi (fixes product name showing 'with cameras')
+	- Packaging: bump linux-sm8150 to 7.3.1-1 (kernel release 7.3.1-1-sm8150) and linux-nabu to 7.3.1-1
+
 2026-10-30 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.1-0:
 	- Universal SM8150: introduce unified sm8150_defconfig for Snapdragon 855 / 855+ / 860 platforms

@@ -12,7 +12,7 @@
 
 pkgbase=linux-sm8150
 pkgver=7.3.1
-pkgrel=0
+pkgrel=1
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux"
 license=('GPL2')

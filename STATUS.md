@@ -90,7 +90,7 @@ make ARCH=arm64 -j$(nproc) Image Image.gz modules dtbs
 
 ---
 
-## Linux 7.3 Release (7.3.1-0 Final)
+## Linux 7.3 Release (7.3.1-1 Final)
 
 The complete SM8150 stack has been ported to the pristine upstream **Linux 7.3.1** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
 
@@ -122,8 +122,13 @@ The complete SM8150 stack has been ported to the pristine upstream **Linux 7.3.1
 - **Audio**: Cirrus Logic quad CS35L41 amplifiers over I2S/TDM (`QUAT_TDM_RX_0`), WCD9340 MultiMedia2 24-bit mic capture.
 - **Sensors**: SLPI FastRPC sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
-### 5. Multi-Distro Packaging
-- **Arch Linux ARM**: `packages/linux-sm8150-73` and `packages/linux-nabu-73` producing `.pkg.tar.xz` kernel, headers, and automated UKI generation.
+### 5. Sleep, Power Management & System Cleanup
+- **S2idle Suspend & Power Button Grace Window**: Restored a 300ms hardware timer grace window (`CONFIG_SUSPEND_S2IDLE_WAKE_GRACE`) in the PM core and hooked `pm_s2idle_set_wake_irq` for the PM8941 power key. Eliminates premature wakeups triggered by the physical release of the power button after pressing it to suspend.
+- **Keyboard Cover Pinctrl**: Preserved active pin control across display blanking in `xiaomi_keyboard.c`, eliminating I2C interrupt freezes and bus stalls when turning the display off.
+- **Device Tree Model Cleanup**: Removed overridden model string in `sm8150-xiaomi-nabu-camera.dtsi`, restoring clean board product name `"Xiaomi Pad 5"`.
+
+### 6. Multi-Distro Packaging
+- **Arch Linux ARM**: `packages/linux-sm8150-73` (`7.3.1-1-sm8150`) and `packages/linux-nabu-73` (`7.3.1-1-krjy`) producing `.pkg.tar.xz` kernel, headers, and automated UKI generation.
 - **Ubuntu / Debian**: Automated `.deb` kernel and header package builds via `bindeb-pkg`.
 - **Fedora**: Automated `.rpm` kernel packages via `binrpm-pkg`.
 
