@@ -77,7 +77,7 @@ The full nabu/SM8150 stack was ported forward from the 6.18 baseline onto a pris
 
 ---
 
-## Linux 7.3 Release (7.3.1-0 Final)
+## Linux 7.3 Release (7.3.1-1 Final)
 
 The complete Xiaomi Pad 5 (nabu) hardware stack has been ported to the pristine upstream **Linux 7.3.1** baseline (branch `nabu/7.3.y`). All peripherals in the hardware support matrix are fully functional.
 
@@ -109,6 +109,11 @@ The complete Xiaomi Pad 5 (nabu) hardware stack has been ported to the pristine 
 - **Audio**: Cirrus Logic quad CS35L41 amplifiers over I2S/TDM (`QUAT_TDM_RX_0`), WCD9340 MultiMedia2 24-bit mic capture.
 - **Sensors**: SLPI FastRPC sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
-### 5. Packaging & Verification
-- **Package**: `linux-nabu-7.3.1-0` (`arch=('aarch64')`, kernel release `7.3.1-0-krjy`).
+### 5. Sleep, Power Management & System Cleanup
+- **S2idle Suspend & Power Button Grace Window**: Restored a 300ms hardware timer grace window (`CONFIG_SUSPEND_S2IDLE_WAKE_GRACE`) in the PM core and hooked `pm_s2idle_set_wake_irq` for the PM8941 power key. Eliminates premature wakeups triggered by the physical release of the power button after pressing it to suspend.
+- **Keyboard Cover Pinctrl**: Preserved active pin control across display blanking in `xiaomi_keyboard.c`, eliminating I2C interrupt freezes and bus stalls when turning the display off.
+- **Device Tree Model Cleanup**: Removed overridden model string in `sm8150-xiaomi-nabu-camera.dtsi`, restoring clean board product name `"Xiaomi Pad 5"`.
+
+### 6. Packaging & Verification
+- **Package**: `linux-nabu-7.3.1-1` (`arch=('aarch64')`, kernel release `7.3.1-1-krjy`).
 - **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink, permissive device links, and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.

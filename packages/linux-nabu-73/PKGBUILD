@@ -16,7 +16,7 @@
 
 pkgbase=linux-nabu
 pkgver=7.3.1
-pkgrel=0
+pkgrel=1
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux-nabu"
 license=('GPL2')
@@ -26,7 +26,7 @@ options=('!strip')
 _dtbfile='qcom/sm8150-xiaomi-nabu.dtb'
 
 source=(
-  "linux-nabu::git+https://github.com/Kumar-Jy/linux-nabu.git#branch=7.3"
+  "linux-nabu::git+https://github.com/Kumar-Jy/linux-nabu.git#branch=nabu/7.3.y"
   "ChangeLog"
 )
 sha256sums=('SKIP'

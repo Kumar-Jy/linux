@@ -7,8 +7,6 @@
  */
 
 / {
-	model = "Xiaomi Pad 5 (nabu) with cameras";
-
 	camera_vdig_1p2: camera-vdig-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "camera_vdig_1p2";
