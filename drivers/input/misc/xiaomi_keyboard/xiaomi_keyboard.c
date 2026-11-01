@@ -400,8 +400,14 @@ static void keyboard_apply_state_locked(void)
 		xiaomi_keyboard_power_off();
 		mdata->powered_on = false;
 	} else if (on && mdata->is_in_suspend == mdata->screen_is_on) {
-		/* Screen blanked or unblanked while the keyboard stays powered */
-		keyboard_pinctrl_apply_locked(mdata->screen_is_on);
+		/*
+		 * Do not toggle pinctrl to suspend on screen blank. Pulling down
+		 * gpio4 resets/disconnects the USB link, which races with system
+		 * suspend (dwc3 port HS-PHY not in L2) and immediately aborts s2idle.
+		 * The keyboard remains safely powered and USB handles autosuspend.
+		 */
+		MI_KB_INFO("screen blank/unblank (screen_is_on=%d), keeping active pinctrl\n",
+			   mdata->screen_is_on);
 	} else {
 		MI_KB_INFO("keyboard status do not need change!");
 	}
