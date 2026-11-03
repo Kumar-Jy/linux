@@ -298,6 +298,22 @@ static void dpu_encoder_phys_vid_setup_timing_engine(
 
 	drm_mode_to_intf_timing_params(phys_enc, &mode, &timing_params);
 
+	/*
+	 * dfps: the extra blanking goes into VFP instead of changing the
+	 * pixel clock, so the INTF vsync period (and with it the frame rate the
+	 * whole pipeline runs at) follows whatever the DSI side was asked for.
+	 */
+	if (phys_enc->dfps_base_fps &&
+	    phys_enc->dfps_cur_fps != phys_enc->dfps_base_fps) {
+		u32 dfps_vtotal;
+
+		dfps_vtotal = DIV_ROUND_CLOSEST_ULL(
+			(u64)phys_enc->dfps_base_vtotal *
+			phys_enc->dfps_base_fps, phys_enc->dfps_cur_fps);
+		timing_params.v_front_porch +=
+			dfps_vtotal - phys_enc->dfps_base_vtotal;
+	}
+
 	fmt = mdp_get_format(&phys_enc->dpu_kms->base, fmt_fourcc, 0);
 	DPU_DEBUG_VIDENC(phys_enc, "fmt_fourcc 0x%X\n", fmt_fourcc);
 
@@ -441,6 +457,57 @@ end:
 			  refcount);
 	}
 	return ret;
+}
+
+/*
+ * dpu_encoder_phys_vid_dfps_update() - change the interface refresh rate
+ * @phys_enc: physical encoder
+ * @fps:      requested refresh rate
+ *
+ * Only the INTF timing has to move: the pixel clock stays put, the extra
+ * blanking goes into VFP, and the register writes land in the CTL
+ * double-buffer so they take effect on the next flush instead of tearing
+ * the frame that is currently being scanned out.
+ */
+static void dpu_encoder_phys_vid_dfps_update(
+		struct dpu_encoder_phys *phys_enc, u32 fps)
+{
+	struct dpu_hw_ctl *ctl = phys_enc->hw_ctl;
+	unsigned long lock_flags;
+
+	if (!phys_enc->hw_intf || phys_enc->intf_mode != INTF_MODE_VIDEO)
+		return;
+
+	if (!phys_enc->dfps_base_fps) {
+		phys_enc->dfps_base_fps =
+			drm_mode_vrefresh(&phys_enc->cached_mode);
+		phys_enc->dfps_base_vtotal = phys_enc->cached_mode.vtotal;
+		phys_enc->dfps_cur_fps = phys_enc->dfps_base_fps;
+	}
+
+	if (!fps || fps == phys_enc->dfps_cur_fps)
+		return;
+
+	phys_enc->dfps_cur_fps = fps;
+
+	/* reprograms the INTF timing registers with the new VFP */
+	dpu_encoder_phys_vid_setup_timing_engine(phys_enc);
+
+	/*
+	 * Only mark the interface as needing a flush; do NOT trigger it here.
+	 * The private trigger pushed the new INTF timing out on its own, one
+	 * frame ahead of the plane flip in the same commit - that mismatch is
+	 * the last visible artefact (a repeated frame going 60 -> 120).  The
+	 * kickoff in msm_atomic flush_commit() will flush it together with the
+	 * planes, which is what the vendor path does as well.
+	 */
+	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
+	if (ctl && ctl->ops.update_pending_flush_intf)
+		ctl->ops.update_pending_flush_intf(ctl, phys_enc->hw_intf->idx);
+	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+
+	DPU_DEBUG_VIDENC(phys_enc, "dfps intf%u -> %u Hz\n",
+			 phys_enc->hw_intf->idx - INTF_0, fps);
 }
 
 static void dpu_encoder_phys_vid_enable(struct dpu_encoder_phys *phys_enc)
@@ -752,6 +819,7 @@ static void dpu_encoder_phys_vid_init_ops(struct dpu_encoder_phys_ops *ops)
 	ops->needs_single_flush = dpu_encoder_phys_vid_needs_single_flush;
 	ops->get_line_count = dpu_encoder_phys_vid_get_line_count;
 	ops->get_frame_count = dpu_encoder_phys_vid_get_frame_count;
+	ops->dfps_update = dpu_encoder_phys_vid_dfps_update;
 }
 
 /**

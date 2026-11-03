@@ -158,6 +158,14 @@ struct msm_kms {
 	/* disp snapshot support */
 	struct kthread_worker *dump_worker;
 	struct kthread_work dump_work;
+
+	/*
+	 * Refresh-rate change requested from outside the DRM commit path.
+	 * It is applied inside msm_atomic_commit_tail() so the DSI timing and
+	 * the DPU interface timing land on the same frame boundary instead of
+	 * one frame apart (which the panel shows as a flash).
+	 */
+	u32 pending_dfps_fps;
 	struct mutex dump_mutex;
 
 	/*
@@ -239,5 +247,52 @@ static inline void msm_drm_kms_uninit(struct device *dev)
 }
 
 #endif
+
+/*
+ * dfps: the DSI controller on its own only changes how the panel is clocked
+ * out. The DPU INTF is what generates the vsync that paces the whole
+ * pipeline, so the refresh rate only really changes when both sides move.
+ * The DPU encoder installs this hook; the DSI dfps path calls it after
+ * reprogramming its own timing.
+ */
+extern void (*msm_dfps_dpu_hook)(struct drm_encoder *enc, u32 fps);
+
+/* real-time scan line of the video interface, -1 when unavailable */
+extern int msm_dpu_dfps_line_count(void);
+
+/*
+ * The nabu panel is a TDDI part: its touch controller is clocked off the
+ * display timing and has to be told about every refresh-rate change, or its
+ * firmware watchdog trips and touch stops scanning. The panel driver installs
+ * this hook; the dfps path calls it after reprogramming the timing.
+ */
+extern int (*msm_dfps_sync_pen_hook)(u32 fps);
+
+/* one trigger for several DCS commands, scheduled to the VFP start */
+struct mipi_dsi_host;
+struct mipi_dsi_msg;
+int msm_dsi_host_send_cmd_batch(struct mipi_dsi_host *host,
+				struct mipi_dsi_host *slave_host,
+				const struct mipi_dsi_msg *msgs, int count);
+
+/*
+ * Direction hint for the panel's touch-rate notification: true while the
+ * frame is shrinking (60 -> 120), where the DSI video-done boundary the
+ * command path normally waits for never arrives and the 70 ms timeout makes
+ * the switch visibly flash.
+ */
+
+
+/* applied from msm_atomic_commit_tail() while the commit holds the locks */
+u32 msm_dsi_manager_dfps_commit_apply(struct drm_device *dev, u32 fps);
+void msm_dsi_manager_dfps_latch(struct drm_device *dev, u32 fps);
+void msm_dsi_manager_dfps_pen(struct drm_device *dev, u32 fps);
+
+/*
+ * Internal DSI message flag (not a DRM ABI): send the command without waiting
+ * for a video-done frame boundary. Needed by the TDDI sync-pen command, whose
+ * 70 ms wait cannot be satisfied while the frame timing is changing.
+ */
+#define MSM_DSI_MSG_SKIP_VIDEO_WAIT	BIT(2)
 
 #endif /* __MSM_KMS_H__ */

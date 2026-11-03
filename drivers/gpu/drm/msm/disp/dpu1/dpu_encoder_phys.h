@@ -118,6 +118,8 @@ struct dpu_encoder_phys_ops {
 	void (*cleanup_wb_job)(struct dpu_encoder_phys *phys_enc,
 			struct drm_writeback_job *job);
 	bool (*is_valid_for_commit)(struct dpu_encoder_phys *phys_enc);
+	/* dfps: reprogram the interface timing for a new refresh rate */
+	void (*dfps_update)(struct dpu_encoder_phys *phys_enc, u32 fps);
 };
 
 /**
@@ -198,6 +200,11 @@ struct dpu_encoder_phys {
 	wait_queue_head_t pending_kickoff_wq;
 	unsigned int irq[INTR_IDX_MAX];
 	bool has_intf_te;
+
+	/* dfps: baseline timing every refresh-rate request is derived from */
+	u32 dfps_base_fps;
+	u32 dfps_base_vtotal;
+	u32 dfps_cur_fps;
 };
 
 static inline int dpu_encoder_phys_inc_pending(struct dpu_encoder_phys *phys)

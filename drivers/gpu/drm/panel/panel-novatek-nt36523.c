@@ -22,6 +22,8 @@
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 
+#include "../msm/msm_kms.h"
+
 #define DSI_NUM_MIN 1
 
 struct panel_info {
@@ -56,6 +58,98 @@ struct panel_desc {
 static inline struct panel_info *to_panel_info(struct drm_panel *panel)
 {
 	return container_of(panel, struct panel_info, panel);
+}
+
+/*
+ * The nabu panel is a TDDI part: its touch controller is clocked off the
+ * display timing and has to be told which refresh rate the panel is being
+ * switched to. Without the notification its firmware watchdog trips and touch
+ * stops scanning until the driver is reloaded - which is exactly what happens
+ * when dfps is used without this hook.
+ *
+ * Byte values are taken verbatim from the stock dtbo
+ * (qcom,mdss-dsi-dispparam-pen-120hz-command / -60hz-command): enter page 0x2A,
+ * write 0x0d for 120 Hz or 0x0c for 60 Hz to reg 0x23, return to page 0x10.
+ */
+static struct panel_info *nabu_sync_panel;
+
+int (*msm_dfps_sync_pen_hook)(u32 fps);
+
+/*
+ * Set by dfps_store() for the duration of one notification: when the frame
+ * shrinks (60 -> 120), the DSI controller has no VIDEO_DONE boundary left to
+ * wait for, and the 70 ms timeout delays the page write past the point where
+ * the panel is consistent - which shows up as a flash.  Skipping the wait is
+ * fine only because the command is sent after the timing change has landed.
+ */
+bool msm_dfps_sync_pen_skip_wait;
+
+/*
+ * Forward a refresh-rate change to the TDDI touch half.
+ *
+ * Called from dfps_store() *after* the atomic commit has switched the timing:
+ * the panel is already scanning at the new rate, so the page-0x2A write is
+ * consistent with it.  Sending the sequence before the commit leaves the touch
+ * IC on the new rate while the panel still runs the old one for a commit
+ * interval, and its firmware watchdog trips (`Recover for fw reset, FD`).
+ *
+ * The 1 ms pause before the page restore is mandatory: three back-to-back
+ * writes leave the display IC on page 0x2A while the scan side keeps
+ * programming, which shows as a blank panel.
+ */
+
+static int nabu_sync_pen_fps(u32 fps)
+{
+	struct panel_info *pinfo = nabu_sync_panel;
+	struct mipi_dsi_device *dsi;
+	struct mipi_dsi_msg msgs[3];
+	u8 page[2] = { 0xff, 0x2a };
+	u8 rate[2] = { 0x23, 0x00 };
+	u8 restore[2] = { 0xff, 0x10 };
+	int ret;
+
+	if (!pinfo || !pinfo->dsi[0])
+		return -ENODEV;
+
+	if (fps != 120 && fps != 60)
+		return -EINVAL;
+
+	dsi = pinfo->dsi[0];
+	rate[1] = (fps == 120) ? 0x0d : 0x0c;
+
+	memset(msgs, 0, sizeof(msgs));
+	msgs[0].channel = dsi->channel;
+	msgs[0].type = MIPI_DSI_DCS_SHORT_WRITE_PARAM;
+	/*
+	 * vendor runs this command set in LP mode (dsi_lp_mode in the DT):
+	 * each transfer then takes ~20us, which is what spaces the three
+	 * commands far enough apart for the TDDI to accept the page restore.
+	 * The earlier "LP causes continuous flicker" observation came from
+	 * commands landing in the active scan (TRIG_CTRL bit12 was set); with
+	 * the schedule now inside VFP, LP no longer disturbs the video.
+	 */
+	msgs[0].flags = MIPI_DSI_MSG_USE_LPM;
+	msgs[0].tx_buf = page;
+	msgs[0].tx_len = 2;
+
+	msgs[1] = msgs[0];
+	msgs[1].tx_buf = rate;
+
+	msgs[2] = msgs[0];
+	msgs[2].tx_buf = restore;
+
+	/*
+	 * Exactly the vendor shape: three DCS short writes in one DMA packet,
+	 * no delay between them, released by the controller's line scheduler
+	 * inside the vertical blanking interval.
+	 */
+	ret = msm_dsi_host_send_cmd_batch(dsi->host,
+					  pinfo->dsi[1] ? pinfo->dsi[1]->host : NULL,
+					  msgs, 3);
+
+	pr_info("nabu: sync-pen %u Hz (hw-sched) -> %d\n", fps, ret);
+
+	return ret;
 }
 
 static int elish_boe_init_sequence(struct panel_info *pinfo)
@@ -674,6 +768,15 @@ static int nabu_csot_init_sequence(struct panel_info *pinfo)
 	msleep(70);
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x29);
 
+	/*
+	 * Vendor runs DISPPARAM_DIMMING (0x53 = 0x2C, BLDIM=1) 120 ms after
+	 * panel-on; the init sequence itself leaves 0x53 at 0x24.  Without
+	 * this switch the panel keeps its own dimming off, which is visible
+	 * at 60 Hz as a faint brightness ripple.
+	 */
+	msleep(120);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x53, 0x2c);
+
 	return 0;
 }
 
@@ -1126,6 +1229,23 @@ static const struct drm_display_mode nabu_csot_modes[] = {
 		.vsync_end = 2560 + 26 + 4,
 		.vtotal = 2560 + 26 + 4 + 168,
 	},
+	{
+		/*
+		 * 60 Hz sibling of the mode above: same pixel clock, same
+		 * porches, vtotal doubled. Exposed so the compositor can offer
+		 * a real refresh-rate choice; the dfps path is what actually
+		 * programs it seamlessly (see msm_dsi_manager_dfps_set()).
+		 */
+		.clock = (1600 + 88 + 40 + 40) * (2560 + 26 + 4 + 168) * 120 / 1000,
+		.hdisplay = 1600,
+		.hsync_start = 1600 + 88,
+		.hsync_end = 1600 + 88 + 40,
+		.htotal = 1600 + 88 + 40 + 40,
+		.vdisplay = 2560,
+		.vsync_start = 2560 + 26,
+		.vsync_end = 2560 + 26 + 4,
+		.vtotal = (2560 + 26 + 4 + 168) * 2,
+	},
 };
 
 static const struct drm_display_mode j606f_boe_modes[] = {
@@ -1412,6 +1532,15 @@ static int nt36523_probe(struct mipi_dsi_device *dsi)
 	pinfo->desc = of_device_get_match_data(dev);
 	if (!pinfo->desc)
 		return -ENODEV;
+
+	/*
+	 * TDDI panel: let the dfps path tell the touch controller about
+	 * refresh-rate changes (see nabu_sync_pen_fps above).
+	 */
+	if (pinfo->desc == &nabu_csot_desc) {
+		nabu_sync_panel = pinfo;
+		msm_dfps_sync_pen_hook = nabu_sync_pen_fps;
+	}
 
 	/* If the panel is dual dsi, register DSI1 */
 	if (pinfo->desc->is_dual_dsi) {
