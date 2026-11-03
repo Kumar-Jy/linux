@@ -908,6 +908,7 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 			// report Pen ID
 		} else {
 			NVT_ERR("Unknown pen format id!\n");
+			release_pen_event();
 		}
 	} else {
 		release_pen_event();
@@ -1389,6 +1390,19 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	NVT_LOG("suspend start\n");
 
 	bTouchIsAwake = 0;
+
+	/*
+	 * Close the pen input device before the IC goes to sleep, matching the
+	 * vendor driver.  Without this the pen path can still be reporting
+	 * while the IC is entering deep sleep, and the WDT recovery counter
+	 * then trips on the way down - a firmware reflash that lands during
+	 * blanking and fails, leaving the panel without a working touch IC
+	 * until the next resume.
+	 */
+	if (ts->pen_input_dev) {
+		NVT_LOG("if enable pen,will close it\n");
+		disable_pen_input_device(true);
+	}
 
 	if (ts->db_wakeup) {
 		/*---write command to enter "wakeup gesture mode"---*/
