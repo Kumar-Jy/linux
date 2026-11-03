@@ -12,6 +12,7 @@
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/init.h>
+#include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -31,8 +32,57 @@
  * does not provide the deferred precharge below it on nabu. */
 #define QCOM_BMS_DC_MIN_VBAT_UV 3000000
 
+/* Direct charge's own high current pulls VBUS down, so tcpm briefly reports
+ * offline. Turning direct charge off right then raises VBUS again -> PD
+ * renegotiates -> direct charge comes back, oscillating with a ~3.3 s period
+ * that never lets the battery settle (measured: input_current_limit stays 0
+ * and the current stays negative). So give cc_online a sticky window while
+ * direct charge is still SWITCHING. */
+#define QCOM_BMS_CC_STICKY_MS 5000
+
 /* Charger FULL/INHIBIT claims are only credible near the float voltage. */
 #define QCOM_BMS_MIN_FULL_VBAT_UV 4000000
+
+/*
+ * And the current has to agree. Under a heavy charge the terminal voltage is
+ * open-circuit voltage + I*R: 4.9 A across ~90 mohm lifts it by 0.44 V, so a
+ * 12% pack whose real open-circuit voltage is 3.6 V reads 4.05 V and sails
+ * past the 4.0 V gate above, getting misreported as "full" (DMS shows full
+ * while the percentage keeps climbing). FULL can only be true at the end of
+ * CV, where the current has already fallen to near the cutoff, so also cap
+ * the current at 0.1C ~= 870 mA.
+ */
+#define QCOM_BMS_FULL_CURRENT_UA 900000
+
+/* Net discharge above this counts as discharging; do not wait for the charger
+ * status, which lags for a long time after unplugging. */
+#define QCOM_BMS_DISCHARGE_CURRENT_UA 100000
+
+/*
+ * Direct charge must actually deliver before the PMIC steps aside. 500 mA is a
+ * loose floor: a working direct charge runs at amp level, an idle one sits at
+ * 0, so the two cannot be confused.
+ */
+#define QCOM_BMS_DC_MIN_DELIVER_UA 500000
+
+/*
+ * Below this VBAT direct charge is not allowed to take part.
+ *
+ * Measured at low battery (~11%, 3.6 V): the LN8000 ADC freezes (IIN reads a
+ * constant 58680 uA), op_mode caches SWITCHING with no output at all, and the
+ * PMIC only offers a hundred-odd mA -- the two paths fight each other and the
+ * battery keeps draining even on a 9 V/3 A charger. Letting the PMIC own VBUS
+ * alone is more reliable there: it has 3 A ICL + 1.95 A FCC.
+ */
+/*
+ * The old 3.7 V cutoff was written on a wrong conclusion ("direct charge idles
+ * at low VBAT"). The real cause was ln8000_has_fault() counting an already
+ * disabled IIN_OC status bit as a fault, which switched direct charge off by
+ * mistake. With that fixed, direct charge should take over fine at low VBAT,
+ * so the threshold drops to 3.2 V -- a backstop for a genuinely dangerous
+ * pack, no longer the normal path.
+ */
+#define QCOM_BMS_DC_DISABLE_BELOW_UV 3200000
 
 struct qcom_bms_fg {
 	struct device *dev;
@@ -92,6 +142,12 @@ struct qcom_bms_info {
 	struct power_supply *tcpm_psy;
 	struct device_node *tcpm_np;
 	bool pmic_usbin_suspended;
+
+	/* Jiffies of the last tcpm online=1 report, used for the sticky window during direct charge */
+	unsigned long cc_online_last;
+
+	/* Whether the charger was present on the previous evaluate, to detect the "just plugged" edge */
+	bool cc_was_online;
 
 	int status;
 	bool charge_done;
@@ -585,19 +641,29 @@ static void qcom_bms_update_status(struct qcom_bms_info *info)
 	charge_done = (pmic_status == POWER_SUPPLY_STATUS_FULL ||
 		       direct_status == POWER_SUPPLY_STATUS_FULL) &&
 		      (!fg_voltage_known ||
-		       vbat_uv >= QCOM_BMS_MIN_FULL_VBAT_UV);
+		       vbat_uv >= QCOM_BMS_MIN_FULL_VBAT_UV) &&
+		      (!fg_current_valid ||
+		       fg_current < QCOM_BMS_FULL_CURRENT_UA);
 
 	/* Charger state is authoritative; FG current is only a fallback. */
-	if (charge_done)
+	if (charge_done) {
 		new_status = POWER_SUPPLY_STATUS_FULL;
-	else if (direct_status == POWER_SUPPLY_STATUS_CHARGING ||
-		 pmic_status == POWER_SUPPLY_STATUS_CHARGING)
-		new_status = POWER_SUPPLY_STATUS_CHARGING;
-	else if (!input_present ||
-		 pmic_status == POWER_SUPPLY_STATUS_DISCHARGING ||
-		 (fg_current_valid && fg_current < 0))
+	} else if (!input_present ||
+		   (fg_current_valid && fg_current < -QCOM_BMS_DISCHARGE_CURRENT_UA)) {
+		/*
+		 * A clearly negative current always means discharging, so check it before
+		 * the charger status. The PMIC status lags a long time after unplugging
+		 * (measured: still reports CHARGING a minute later); with the old order
+		 * the UI would keep showing "charging" after unplug.
+		 */
 		new_status = POWER_SUPPLY_STATUS_DISCHARGING;
-	else if (fg_current_valid && fg_current > 0)
+	} else if (direct_status == POWER_SUPPLY_STATUS_CHARGING ||
+		   pmic_status == POWER_SUPPLY_STATUS_CHARGING) {
+		new_status = POWER_SUPPLY_STATUS_CHARGING;
+	} else if (pmic_status == POWER_SUPPLY_STATUS_DISCHARGING ||
+		   (fg_current_valid && fg_current < 0)) {
+		new_status = POWER_SUPPLY_STATUS_DISCHARGING;
+	} else if (fg_current_valid && fg_current > 0)
 		new_status = POWER_SUPPLY_STATUS_CHARGING;
 	else
 		new_status = POWER_SUPPLY_STATUS_NOT_CHARGING;
@@ -705,9 +771,102 @@ static void qcom_bms_evaluate_direct_charge(struct qcom_bms_info *info)
 					POWER_SUPPLY_PROP_ONLINE, &val);
 	cc_online = !ret && val.intval;
 
+	if (cc_online)
+		info->cc_online_last = jiffies;
+
+	/*
+	 * Force one PMIC resume on the insertion edge.
+	 *
+	 * The PMIC input current limit is only written in smb_status_change_work,
+	 * and that work is scheduled by set_usbin_suspend(false). If nothing was
+	 * plugged in at boot, stage C has already flushed pmic_usbin_suspended to
+	 * false, so plugging in later gives no reason to call resume again -- ICL
+	 * stays at 0 (measured: icl=0, battery discharging at -1.8 A).
+	 *
+	 * So only fill it in on the cc_online 0 -> 1 edge. Edge triggering is
+	 * idempotent: a single write, unlike an unconditional call that would
+	 * flood mod_delayed_work and I2C.
+	 */
+	if (cc_online && !info->cc_was_online && have_pmic &&
+	    pmic.ops->set_usbin_suspend) {
+		if (pmic.ops->set_usbin_suspend(pmic.priv, false))
+			dev_warn(info->dev,
+				 "failed to resume PMIC USBIN on plug-in\n");
+		else
+			info->pmic_usbin_suspended = false;
+	}
+	info->cc_was_online = cc_online;
+
+	/*
+	 * Direct charge in SWITCHING means VIN is really there (op_mode requires
+	 * input present); tcpm reporting offline then is most likely its own heavy
+	 * current pulling VBUS down, not an unplug. Tolerate it for a window so
+	 * direct charge can settle; if it is still offline after the timeout,
+	 * treat it as a real disconnect.
+	 */
+	if (!cc_online && direct_online &&
+	    time_before(jiffies,
+			info->cc_online_last + msecs_to_jiffies(QCOM_BMS_CC_STICKY_MS))) {
+		cc_online = true;
+		dev_dbg(info->dev,
+			"tcpm offline while direct charge is switching, holding\n");
+	}
+
 	want_on = cc_online && READ_ONCE(info->authenticated) &&
 		  health == POWER_SUPPLY_HEALTH_GOOD &&
 		  vbat_uv >= QCOM_BMS_DC_MIN_VBAT_UV;
+
+	/*
+	 * At low VBAT keep direct charge out of the game: in that range it sits
+	 * half-dead holding SWITCHING while delivering nothing, dragging the whole
+	 * charging path down. Let the PMIC carry it alone and hand back once the
+	 * voltage climbs past the threshold.
+	 */
+	if (vbat_uv < QCOM_BMS_DC_DISABLE_BELOW_UV && want_on) {
+		want_on = false;
+		dev_info_ratelimited(info->dev,
+				     "low VBAT (%d uV): keeping PMIC-only, direct charge withheld\n",
+				     vbat_uv);
+	}
+
+	/*
+	 * Low-voltage window: direct charge (LN8000) is disabled because VBAT is
+	 * below its threshold, which is correct -- it does not support cells under
+	 * 3 V. But the PMIC USBIN path has to take over here and let the PM8150B
+	 * hardware trickle/pre-charge state machine pull the voltage up with a
+	 * small current.
+	 *
+	 * Dedup relies on info->pmic_usbin_suspended, initialised to true at probe,
+	 * so the first pass definitely resumes once and writes ICL; after that the
+	 * field is false and nothing repeats, keeping mod_delayed_work from
+	 * hammering I2C.
+	 */
+	/*
+	 * Keep the PMIC awake at low VBAT (only then can ICL be written).
+	 *
+	 * Dedup is mandatory here: set_usbin_suspend(false) schedules
+	 * mod_delayed_work internally and this function is called at high frequency
+	 * from the psy notifier. It used to be unconditional, the work got
+	 * rescheduled over and over and I2C was flooded (usb_type read back EAGAIN,
+	 * icl oscillating between 0 and 250 mA). So write once, and only when the
+	 * path really is suspended.
+	 *
+	 * The threshold is DC_DISABLE_BELOW_UV (3.2 V, a backstop for a genuinely
+	 * dangerous pack only).
+	 */
+	if (!want_on && cc_online && have_pmic &&
+	    vbat_uv < QCOM_BMS_DC_DISABLE_BELOW_UV &&
+	    info->pmic_usbin_suspended &&
+	    pmic.ops->set_usbin_suspend) {
+		if (pmic.ops->set_usbin_suspend(pmic.priv, false))
+			dev_warn_once(info->dev,
+				      "failed to resume PMIC USBIN at low VBAT\n");
+		else if (info->pmic_usbin_suspended)
+			dev_info(info->dev,
+				 "low VBAT (%d uV): resuming PMIC USBIN for pre-charge\n",
+				 vbat_uv);
+		info->pmic_usbin_suspended = false;
+	}
 
 	if (want_on && !direct_online) {
 		ret = direct.ops->set_charging_enabled(direct.priv, true);
@@ -740,7 +899,27 @@ static void qcom_bms_evaluate_direct_charge(struct qcom_bms_info *info)
 		direct_online = online;
 
 	if (have_pmic && pmic.ops->set_usbin_suspend) {
-		bool want_pmic_susp = direct_online;
+		/*
+		 * The test is "direct charge is really delivering", not "direct charge is
+		 * enabled".
+		 *
+		 * direct_online only means chg_en && op_mode == SWITCHING -- the chip
+		 * internal state, which does not guarantee any current is delivered. At
+		 * low battery direct charge has been measured reporting SWITCHING while the
+		 * battery still drained; suspending the PMIC on that basis leaves both
+		 * paths silent and the battery keeps dropping on a 9 V/3 A charger. So read
+		 * the actual output current of direct charge and only let the PMIC step
+		 * aside once it exceeds the threshold; otherwise the PMIC stays on as a
+		 * fallback.
+		 */
+		int direct_i = 0;
+		bool direct_delivering = false;
+
+		if (direct_online && direct.ops->get_current_now &&
+		    !direct.ops->get_current_now(direct.priv, &direct_i))
+			direct_delivering = direct_i > QCOM_BMS_DC_MIN_DELIVER_UA;
+
+		bool want_pmic_susp = direct_delivering;
 
 		if (want_pmic_susp != info->pmic_usbin_suspended) {
 			ret = pmic.ops->set_usbin_suspend(pmic.priv,
@@ -1134,6 +1313,23 @@ static int qcom_bms_probe(struct platform_device *pdev)
 
 	info->dev = &pdev->dev;
 	info->status = POWER_SUPPLY_STATUS_UNKNOWN;
+	/*
+	 * The USBIN path is suspended by default after PM8150B power-on. Assume
+	 * "already suspended" here, otherwise the dedup logic ("only write on a
+	 * state change") never fires the first resume, the PMIC never gets
+	 * configured and the input current limit stays at 0 -- measured as a
+	 * 9 V/3 A charger plugged in with icl=0 and the battery discharging at
+	 * -1.8 A.
+	 *
+	 * Unconditional writes are not an option either: set_usbin_suspend()
+	 * schedules mod_delayed_work internally and this function is called at high
+	 * frequency from the psy notifier, so writing blindly floods I2C (usb_type
+	 * reads back EAGAIN, icl oscillating between 0 and 250 mA).
+	 *
+	 * Initialising to true plus the existing dedup makes the first pass resume
+	 * and nothing repeat afterwards.
+	 */
+	info->pmic_usbin_suspended = true;
 	of_property_read_u32(pdev->dev.of_node, "qcom,required-authenticators",
 			     &info->required_auth_mask);
 	info->required_auth_mask &= GENMASK(QCOM_BMS_AUTH_MAX - 1, 0);

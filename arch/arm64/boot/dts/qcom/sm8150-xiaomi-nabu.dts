@@ -134,7 +134,22 @@
 
 	qcom_bms: battery-manager {
 		compatible = "qcom,pm8150b-bms";
-		qcom,required-authenticators = <3>;
+		/*
+		 * This used to be <3>: require both authenticators to pass before
+		 * charging is allowed. But the DTS references no
+		 * qcom,authenticator at all, so auth[].dev stays NULL,
+		 * authenticated_mask stays 0 and authenticated is never true --
+		 * the coordinator's want_on never becomes true and direct charge
+		 * (LN8000) is never enabled.
+		 *
+		 * That is exactly the all-night debugging picture: op_mode caching
+		 * SWITCHING (online reports true), zero real output, LN8000 ADC
+		 * frozen, and a 9 V/3 A charger delivering only the PMIC's
+		 * 1.875 A.
+		 *
+		 * Do not require an authenticator that is not configured.
+		 */
+		qcom,required-authenticators = <0>;
 		/* tcpm source psy (CC-driven attach/detach); powers direct-charge teardown */
 		qcom,tcpm-psy = <&pm8150b_typec>;
 		status = "okay";
