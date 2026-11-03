@@ -639,9 +639,27 @@ static int ln8000_enable_charging(struct ln8000_info *info, bool en)
 
 static bool ln8000_has_fault(struct ln8000_info *info)
 {
-	return READ_ONCE(info->vbat_ov) || READ_ONCE(info->vbus_ov) ||
-	       READ_ONCE(info->iin_oc) || READ_ONCE(info->tdie_fault) ||
-	       READ_ONCE(info->wdt_fault);
+	struct ln8000_pdata *p = &info->pdata;
+	bool fault;
+
+	/*
+	 * Protections explicitly disabled in DT must not be armed again here.
+	 *
+	 * iin-ocp-disable only masks the IIN_OCP interrupt; it does not stop
+	 * the IIN_OC bit in the INT status register from being set. FAULT_INT
+	 * is not masked, so once it fires we land here and switch direct
+	 * charge off -- which makes iin-ocp-disable in the DTS useless: direct
+	 * charge is declared faulty and shut down as soon as the input current
+	 * wobbles, while op_mode still caches SWITCHING (online reports true)
+	 * with zero actual output.
+	 */
+	fault = READ_ONCE(info->vbat_ov) || READ_ONCE(info->vbus_ov) ||
+		READ_ONCE(info->tdie_fault) || READ_ONCE(info->wdt_fault);
+
+	if (!p->iin_ocp_disable && READ_ONCE(info->iin_oc))
+		fault = true;
+
+	return fault;
 }
 
 static int ln8000_get_status(void *priv, int *status)
@@ -673,8 +691,10 @@ static int ln8000_get_current_now(void *priv, int *val)
 	int ret;
 
 	ret = ln8000_get_adc_data(info, LN8000_ADC_CH_IIN, &iin);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_info_ratelimited(info->dev, "IIN ADC read failed: %d\n", ret);
 		return ret;
+	}
 
 	*val = iin * 2;
 	return 0;
@@ -703,10 +723,18 @@ static int ln8000_get_input_current_limit(void *priv, int *val)
 static int ln8000_get_health(void *priv, int *val)
 {
 	struct ln8000_info *info = priv;
+	struct ln8000_pdata *p = &info->pdata;
 
 	if (READ_ONCE(info->vbat_ov) || READ_ONCE(info->vbus_ov))
 		*val = POWER_SUPPLY_HEALTH_OVERVOLTAGE;
-	else if (READ_ONCE(info->iin_oc))
+	/*
+	 * iin_oc has to respect iin-ocp-disable as well: when the protection
+	 * is explicitly disabled in DT the status bit can still be set (only
+	 * the interrupt is masked). Reporting OVERCURRENT makes the coordinator
+	 * treat direct charge as unhealthy and never enable it, so the DTS
+	 * switch would do nothing.
+	 */
+	else if (!p->iin_ocp_disable && READ_ONCE(info->iin_oc))
 		*val = POWER_SUPPLY_HEALTH_OVERCURRENT;
 	else if (READ_ONCE(info->tdie_fault))
 		*val = POWER_SUPPLY_HEALTH_OVERHEAT;

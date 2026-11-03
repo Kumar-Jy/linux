@@ -64,6 +64,29 @@
 #define OCP_CHARGER_BIT BIT(1)
 
 #define USBIN_CMD_IL 0x340
+
+/*
+ * USBIN sub-block (USBIN_BASE = 0x1300, chip->base = 0x1000 in this
+ * driver, so every offset below is 0x3xx relative to 0x1000).
+ *
+ * USBIN_ADAPTER_ALLOW_CFG is an always-on OVP comparator window. The
+ * bootloader often leaves it at "5 V only"; once PD raises VBUS to 9 V or
+ * PPS, the comparator latches an overvoltage (bit3 of USBIN_INT_RT_STS)
+ * and charging is gated off permanently. The symptom is exactly a 9 V/3 A
+ * charger with BATTERY_CHARGER_STATUS_1 bouncing between PAUSE and
+ * DISABLE while ICL reads 0.
+ * See step 8 of SW_OVERRIDE_HC_MODE in asidko/pm6150-charger-mainline.
+ */
+#define USBIN_INT_RT_STS        0x310
+#define USBIN_INT_LATCHED_CLR   0x314
+#define USBIN_ADAPTER_ALLOW_OVERRIDE 0x344
+#define USBIN_ADAPTER_ALLOW_CFG 0x360
+
+#define USBIN_ADAPTER_ALLOW_5V_TO_12V        12   /* 0x0C: allow 5-12 V */
+#define USBIN_ADAPTER_ALLOW_OVERRIDE_CONTINUOUS BIT(3) /* accept 4-12 V range */
+#define USBIN_OV_RT_STS_BIT     BIT(3)  /* 0x1310: input overvoltage */
+#define USBIN_UV_RT_STS_BIT     BIT(2)  /* 0x1310: input undervoltage */
+#define USBIN_SUSPEND_ON_COLLAPSE_BIT   BIT(7) /* 0x1380: suspend on collapse */
 #define USBIN_SUSPEND_BIT BIT(0)
 
 #define CMD_APSD 0x341
@@ -144,14 +167,32 @@
  */
 #define CURRENT_SCALE_FACTOR 50000
 
+/*
+ * APSD is the BC1.2 charger-type detection; the hardware needs 1-2 s to
+ * set DONE. The original code re-ran it after 1 s, resetting detection
+ * before it could finish, so DONE never came up and ICL was never
+ * programmed (measured: with a PD 9 V/3 A charger, icl=0 and the battery
+ * kept discharging). Relax it to 3 s and cap the retry count.
+ */
+#define APSD_RETRY_MS 3000
+#define APSD_MAX_RETRIES 5
+
+/*
+ * bit2:0 encoding of BATTERY_CHARGER_STATUS_1, ordered per the PM8150B
+ * hardware manual (matches vendor smb5-reg.h) -- do not guess from the
+ * names: INHIBIT is 0 and PAUSE is 6. The old table put TRICKLE at 0 and
+ * invented a FAST_CHARGE entry, so a reading of 6 (really PAUSE) was taken
+ * as INHIBIT and reported as "Full": a 0% battery shown as fully charged
+ * while a 9 V/3 A charger could not charge it at all.
+ */
 enum charger_status {
-	TRICKLE_CHARGE = 0,
+	INHIBIT_CHARGE = 0,
+	TRICKLE_CHARGE,
 	PRE_CHARGE,
-	FAST_CHARGE,
 	FULLON_CHARGE,
 	TAPER_CHARGE,
 	TERMINATE_CHARGE,
-	INHIBIT_CHARGE,
+	PAUSE_CHARGE,
 	DISABLE_CHARGE,
 };
 
@@ -187,6 +228,7 @@ struct smb_chip {
 	u32 constant_charge_current_max_ua;
 	bool authenticated;
 	u32 voltage_max_design_uv;
+	unsigned int apsd_retries;
 };
 
 static void smb_get_batt_info(struct smb_chip *chip)
@@ -324,20 +366,33 @@ static int smb_get_prop_status(void *priv, int *val)
 
 	stat &= BATTERY_CHARGER_STATUS_MASK;
 
+	/*
+	 * Map by what the hardware status actually means, not by copying
+	 * vendor:
+	 *   TRICKLE/PRE/FULLON/TAPER  charging           -> CHARGING
+	 *   TERMINATE                 termination hit    -> FULL
+	 *   INHIBIT                   charging inhibited -> NOT_CHARGING
+	 *   PAUSE                     charging paused    -> NOT_CHARGING
+	 *   DISABLE                   charging disabled  -> NOT_CHARGING
+	 *
+	 * Vendor reports INHIBIT as FULL so the Android status bar does not
+	 * flicker; the cost is "fully charged" while charging is actually
+	 * inhibited at a low battery. Report the real state instead.
+	 */
 	switch (stat) {
 	case TRICKLE_CHARGE:
 	case PRE_CHARGE:
-	case FAST_CHARGE:
 	case FULLON_CHARGE:
 	case TAPER_CHARGE:
 		*val = POWER_SUPPLY_STATUS_CHARGING;
 		break;
+	case TERMINATE_CHARGE:
+		*val = POWER_SUPPLY_STATUS_FULL;
+		break;
+	case INHIBIT_CHARGE:
+	case PAUSE_CHARGE:
 	case DISABLE_CHARGE:
 		*val = POWER_SUPPLY_STATUS_NOT_CHARGING;
-		break;
-	case TERMINATE_CHARGE:
-	case INHIBIT_CHARGE:
-		*val = POWER_SUPPLY_STATUS_FULL;
 		break;
 	default:
 		*val = POWER_SUPPLY_STATUS_UNKNOWN;
@@ -439,6 +494,17 @@ static void smb_status_change_work(struct work_struct *work)
 		return;
 	}
 
+	/*
+	 * Cable present: clear the latched USBIN interrupt bits (W1C,
+	 * write 1 to clear). Once the OV/UV comparator latches, the internal
+	 * fault gate keeps blocking charging even after VBUS is healthy
+	 * again (most likely when PD steps 5 V -> 9 V). Together with the
+	 * widened OVP window in the init table: if the RT_STS bit is still
+	 * set after clearing, it is a real fault and we clear it again on the
+	 * next pass.
+	 */
+	regmap_write(chip->regmap, chip->base + USBIN_INT_LATCHED_CLR, 0xFF);
+
 	for (count = 0; count < 3; count++) {
 		dev_dbg(chip->dev, "get charger type retry %d\n", count);
 		rc = smb_apsd_get_charger_type(chip, &charger_type);
@@ -453,17 +519,43 @@ static void smb_status_change_work(struct work_struct *work)
 	}
 
 	if (rc < 0) {
-		rc = regmap_update_bits(chip->regmap, chip->base + CMD_APSD,
-					APSD_RERUN_BIT, APSD_RERUN_BIT);
-		if (rc < 0) {
-			dev_err(chip->dev, "failed to rerun APSD: %d\n", rc);
+		/*
+		 * APSD produced no result. Retry a few times but do not wait
+		 * forever: a PD charger negotiates over CC and never does the
+		 * BC1.2 D+/D- handshake, so DONE may never be set. In that case
+		 * tcpm has already agreed VBUS (9 V/3 A) and falling back to the
+		 * battery DT maximum charge current is safe -- far better than
+		 * icl=0 with a charger plugged in and the battery discharging.
+		 */
+		if (chip->apsd_retries++ < APSD_MAX_RETRIES) {
+			rc = regmap_update_bits(chip->regmap,
+						chip->base + CMD_APSD,
+						APSD_RERUN_BIT, APSD_RERUN_BIT);
+			if (rc < 0) {
+				dev_err(chip->dev,
+					"failed to rerun APSD: %d\n", rc);
+				return;
+			}
+			mod_delayed_work(system_dfl_wq,
+					 &chip->status_change_work,
+					 msecs_to_jiffies(APSD_RETRY_MS));
+			dev_dbg(chip->dev,
+				"get charger type failed, rerun apsd (%u/%u)\n",
+				chip->apsd_retries, APSD_MAX_RETRIES);
 			return;
 		}
-		mod_delayed_work(system_dfl_wq, &chip->status_change_work,
-				 msecs_to_jiffies(1000));
-		dev_dbg(chip->dev, "get charger type failed, rerun apsd\n");
-		return;
+
+		current_ua = chip->constant_charge_current_max_ua;
+		if (!READ_ONCE(chip->authenticated))
+			current_ua = min(current_ua, UNVERIFIED_CURRENT_UA);
+		dev_info(chip->dev,
+			 "APSD never completed, falling back to %u uA\n",
+			 current_ua);
+		current_ua = max(current_ua, smb_typec_current_ua(chip));
+		goto set_limit;
 	}
+
+	chip->apsd_retries = 0;
 
 	switch (charger_type) {
 	case POWER_SUPPLY_USB_TYPE_CDP:
@@ -483,6 +575,7 @@ static void smb_status_change_work(struct work_struct *work)
 	/* A Type-C port may offer more than its BC1.2 type implies, e.g. a laptop */
 	current_ua = max(current_ua, smb_typec_current_ua(chip));
 
+set_limit:
 	rc = smb_set_current_limit(chip, current_ua);
 	if (rc < 0) {
 		dev_err(chip->dev, "failed to set input current limit: %d\n",
@@ -660,9 +753,31 @@ static const struct smb_init_register smb5_init_seq[] = {
 	  .mask = USBIN_MODE_CHG_BIT,
 	  .val = USBIN_MODE_CHG_BIT },
 	{ .addr = CMD_ICL_OVERRIDE, .mask = ICL_OVERRIDE_BIT, .val = 0 },
+	/*
+	 * ICL_OVERRIDE_AFTER_APSD: keeps the value written to
+	 * USBIN_CURRENT_LIMIT_CFG alive across an APSD re-run. Step 7 of
+	 * SW_OVERRIDE_HC_MODE in asidko/pm6150 does the same.
+	 *
+	 * Note: bit4 of USBIN_LOAD_CFG reads back as 0 on this PM8150B and
+	 * refuses to stick; but with AICL disabled ICL holds steady anyway
+	 * (reads 0x78 = 3 A), so this line is harmless -- it will take
+	 * effect if the PMIC model or firmware ever changes.
+	 */
 	{ .addr = USBIN_LOAD_CFG,
 	  .mask = ICL_OVERRIDE_AFTER_APSD_BIT,
-	  .val = 0 },
+	  .val = ICL_OVERRIDE_AFTER_APSD_BIT },
+	/*
+	 * OVP comparator window: 5-12 V + CONTINUOUS. Without it the
+	 * bootloader default 5 V-only window latches an overvoltage when PD
+	 * raises VBUS to 9 V and charging is gated off permanently (see the
+	 * USBIN_ADAPTER_ALLOW_CFG comment above).
+	 */
+	{ .addr = USBIN_ADAPTER_ALLOW_CFG,
+	  .mask = 0xff,
+	  .val = USBIN_ADAPTER_ALLOW_5V_TO_12V },
+	{ .addr = USBIN_ADAPTER_ALLOW_OVERRIDE,
+	  .mask = 0xff,
+	  .val = USBIN_ADAPTER_ALLOW_OVERRIDE_CONTINUOUS },
 	/* Disable watchdog */
 	{ .addr = SNARL_BARK_BITE_WD_CFG, .mask = 0xff, .val = 0 },
 	{ .addr = WD_CFG,
@@ -670,15 +785,22 @@ static const struct smb_init_register smb5_init_seq[] = {
 		  BARK_WDOG_INT_EN_BIT,
 	  .val = 0 },
 	/*
-	 * Enable Automatic Input Current Limit, this will slowly ramp up the current
-	 * When connected to a wall charger, and automatically stop when it detects
-	 * the charger current limit (voltage drop?) or it reaches the programmed limit.
+	 * Disable hardware AICL but keep SUSPEND_ON_COLLAPSE.
+	 *
+	 * Current limiting here is static and done in software
+	 * (icr_override + USBIN_CURRENT_LIMIT_CFG); AICL periodically re-runs
+	 * and walks our fixed value back, and together with APSD it makes ICL
+	 * oscillate between 0 and the configured steps. Worse with a PD
+	 * charger: APSD cannot determine a type, AICL keeps probing down and
+	 * ICL ends up at 0. Keep SUSPEND_ON_COLLAPSE: if the input really
+	 * collapses, the hardware should still suspend.
+	 * Matches step 1 of SW_OVERRIDE_HC_MODE in
+	 * asidko/pm6150-charger-mainline.
 	 */
 	{ .addr = USBIN_AICL_OPTIONS_CFG,
 	  .mask = USBIN_AICL_PERIODIC_RERUN_EN_BIT | USBIN_AICL_ADC_EN_BIT |
 		  USBIN_AICL_EN_BIT | SUSPEND_ON_COLLAPSE_USBIN_BIT,
-	  .val = USBIN_AICL_PERIODIC_RERUN_EN_BIT | USBIN_AICL_ADC_EN_BIT |
-		 USBIN_AICL_EN_BIT },
+	  .val = SUSPEND_ON_COLLAPSE_USBIN_BIT },
 	/*
 	 * This overrides all of the other current limit configs and is
 	 * expected to be used for setting limits based on temperature.
