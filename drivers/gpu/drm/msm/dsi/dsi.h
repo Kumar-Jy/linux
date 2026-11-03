@@ -45,6 +45,9 @@ struct msm_dsi {
 	bool phy_enabled;
 
 	int id;
+
+	/* encoder this DSI feeds; needed by the dfps path to reach the DPU */
+	struct drm_encoder *encoder;
 };
 
 /* dsi manager */
@@ -70,6 +73,11 @@ void msm_dsi_host_cmd_xfer_commit(struct mipi_dsi_host *host,
 					u32 dma_base, u32 len);
 int msm_dsi_host_enable(struct mipi_dsi_host *host);
 int msm_dsi_host_disable(struct mipi_dsi_host *host);
+int msm_dsi_host_dfps_update(struct mipi_dsi_host *host, u32 new_fps,
+			     bool is_bonded_dsi, bool commit);
+void msm_dsi_host_dfps_latch(struct mipi_dsi_host *host);
+void msm_dsi_host_wait_vfp(struct mipi_dsi_host *host);
+u32 msm_dsi_host_dfps_get_fps(struct mipi_dsi_host *host);
 void msm_dsi_host_enable_irq(struct mipi_dsi_host *host);
 void msm_dsi_host_disable_irq(struct mipi_dsi_host *host);
 int msm_dsi_host_power_on(struct mipi_dsi_host *host,

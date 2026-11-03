@@ -4,8 +4,11 @@
  * Author: Rob Clark <robdclark@gmail.com>
  */
 
+#include <linux/delay.h>
+
 #include <drm/drm_atomic_uapi.h>
 #include <drm/drm_vblank.h>
+#include <drm/drm_vblank_work.h>
 
 #include "msm_atomic_trace.h"
 #include "msm_drv.h"
@@ -210,6 +213,7 @@ int msm_atomic_check(struct drm_device *dev, struct drm_atomic_commit *state)
 	return drm_atomic_helper_check(dev, state);
 }
 
+
 void msm_atomic_commit_tail(struct drm_atomic_commit *state)
 {
 	struct drm_device *dev = state->dev;
@@ -218,6 +222,7 @@ void msm_atomic_commit_tail(struct drm_atomic_commit *state)
 	struct drm_crtc *async_crtc = NULL;
 	unsigned crtc_mask = get_crtc_mask(state);
 	bool async = can_do_async(state, &async_crtc);
+	u32 applied_dfps_fps = 0;
 
 	trace_msm_atomic_commit_tail_start(async, crtc_mask);
 
@@ -246,7 +251,31 @@ void msm_atomic_commit_tail(struct drm_atomic_commit *state)
 	 */
 	drm_atomic_helper_commit_modeset_disables(dev, state);
 	drm_atomic_helper_commit_planes(dev, state, 0);
+
+	/*
+	 * A refresh-rate change requested from outside the commit path (the
+	 * dfps sysfs knob) is applied here: the planes are programmed and we
+	 * are about to flush, so the DSI timing and the DPU interface timing
+	 * land on the same frame boundary instead of one frame apart.
+	 */
+	if (kms->pending_dfps_fps) {
+		u32 fps = kms->pending_dfps_fps;
+
+		kms->pending_dfps_fps = 0;
+		applied_dfps_fps = msm_dsi_manager_dfps_commit_apply(dev, fps);
+	}
+
 	drm_atomic_helper_commit_modeset_enables(dev, state);
+
+	/*
+	 * The TDDI touch half is moved after the interface has actually
+	 * switched: this is the mainline equivalent of the vendor's
+	 * post-kickoff dsi_panel_sync_pen_fps().  Sending it earlier (from
+	 * dfps_store) queues the page-0x2A write against the new timing while
+	 * the controller is still scanning the old one, so the per-line DMA
+	 * schedule never matches and the write lands mid-scan -> white screen.
+	 */
+
 
 	if (async) {
 		struct msm_pending_timer *timer =
@@ -303,6 +332,15 @@ fallback:
 	trace_msm_atomic_flush_commit(crtc_mask);
 	kms->funcs->flush_commit(kms, crtc_mask);
 	unlock_crtcs(kms, crtc_mask);
+
+	/*
+	 * Vendor ordering: kickoff -> touch pen -> (later) TIMING_DB_MODE=0.
+	 * The DDIC must learn the new rate while the old timings are still
+	 * running, otherwise it handles the first fast frame with the old
+	 * internal state and repeats it.
+	 */
+	if (applied_dfps_fps && msm_dfps_sync_pen_hook)
+		msm_dsi_manager_dfps_pen(dev, applied_dfps_fps);
 	/*
 	 * Wait for flush to complete:
 	 */
@@ -315,6 +353,18 @@ fallback:
 	lock_crtcs(kms, crtc_mask);
 	kms->funcs->complete_commit(kms, crtc_mask);
 	unlock_crtcs(kms, crtc_mask);
+
+	/*
+	 * Vendor order is kickoff -> wait_for_commit_done -> complete_commit
+	 * -> ~2ms -> TIMING_DB_MODE=0.  commit_modeset_enables() is a no-op
+	 * for a pure dfps commit, so the interface is only really kicked by
+	 * flush_commit() above; latching earlier re-introduced the one-frame
+	 * mismatch on 60 -> 120.
+	 */
+	if (applied_dfps_fps) {
+		msleep(2);
+		msm_dsi_manager_dfps_latch(dev, applied_dfps_fps);
+	}
 	kms->funcs->disable_commit(kms);
 
 	drm_atomic_helper_commit_hw_done(state);

@@ -2944,3 +2944,49 @@ void dpu_encoder_phys_init(struct dpu_encoder_phys *phys_enc,
 
 	init_waitqueue_head(&phys_enc->pending_kickoff_wq);
 }
+
+/*
+ * dfps: the DSI path calls this after reprogramming its own timing. The DPU
+ * INTF is what generates the vsync that paces the pipeline, so the refresh
+ * rate only really changes once both sides move together.
+ */
+/* encoder currently driving a dfps switch, used for the line counter */
+static struct dpu_encoder_virt *dfps_enc;
+
+int msm_dpu_dfps_line_count(void)
+{
+	struct dpu_encoder_phys *phys;
+
+	if (!dfps_enc || !dfps_enc->cur_master)
+		return -1;
+
+	phys = dfps_enc->cur_master;
+	if (!phys->ops.get_line_count)
+		return -1;
+
+	return phys->ops.get_line_count(phys);
+}
+
+static void dpu_encoder_virt_dfps_set(struct drm_encoder *enc, u32 fps)
+{
+	struct dpu_encoder_virt *dpu_enc;
+	unsigned int i;
+
+	if (!enc)
+		return;
+
+	dpu_enc = to_dpu_encoder_virt(enc);
+	dfps_enc = dpu_enc;
+	if (!dpu_enc->num_phys_encs)
+		return;
+
+	for (i = 0; i < dpu_enc->num_phys_encs; i++) {
+		struct dpu_encoder_phys *phys = dpu_enc->phys_encs[i];
+
+		if (phys && phys->ops.dfps_update)
+			phys->ops.dfps_update(phys, fps);
+	}
+}
+
+void (*msm_dfps_dpu_hook)(struct drm_encoder *enc, u32 fps) =
+	dpu_encoder_virt_dfps_set;
