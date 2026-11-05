@@ -798,8 +798,19 @@ u32 msm_dsi_manager_dfps_commit_apply(struct drm_device *dev, u32 fps)
 		dsi_mgr_get_other_dsi(msm_dsim_glb.master_dsi_link_id) : NULL;
 
 	cur_fps = msm_dsi_host_dfps_get_fps(master->host);
-	if (!cur_fps || cur_fps == fps)
+	if (!cur_fps)
 		return 0;
+
+	if (cur_fps == fps) {
+		/*
+		 * Same rate: no timing change, but re-apply the touch sync
+		 * page anyway.  The DDIC forgets page 0x2A / reg 0x23 when it
+		 * is powered down on blank; echoing the current rate is the
+		 * cheapest way to put it back without a full dfps switch.
+		 */
+		msm_dsi_manager_dfps_pen(dev, fps);
+		return 0;
+	}
 
 	msm_dsi_manager_dfps_apply(master, slave, fps, cur_fps);
 
