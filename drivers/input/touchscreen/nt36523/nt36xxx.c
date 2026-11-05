@@ -785,6 +785,17 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	/* ESD protect by WDT */
 	if (nvt_wdt_fw_recovery(buf)) {
 		NVT_ERR("Recover for fw reset, %02X\n", buf[1]);
+
+		/*
+		 * Do not reflash while the panel is blanking.  The download
+		 * writes the MCU SRAM and needs the TDDI powered; a blank in
+		 * the middle leaves the chip in its bootloader with
+		 * golden CRC = 0, and it stays dead until the next resume.
+		 * The next unblank runs a full firmware download anyway.
+		 */
+		if (!bTouchIsAwake)
+			return IRQ_HANDLED;
+
 		if (buf[1] == 0xFD) {
 			NVT_ERR("Dump FW history:\n");
 			nvt_dump_fw_history();
@@ -859,7 +870,7 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 
 	input_sync(ts->input_dev);
 
-	if (!ts->pen_support)
+	if (!ts->pen_support || !ts->pen_input_dev_enable)
 		return IRQ_HANDLED;
 
 	// parse and handle pen report
@@ -907,7 +918,7 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 		} else if (pen_format_id == 0xF0) {
 			// report Pen ID
 		} else {
-			NVT_ERR("Unknown pen format id!\n");
+			NVT_ERR_RL("Unknown pen format id!\n");
 			release_pen_event();
 		}
 	} else {
@@ -942,6 +953,8 @@ static int32_t disable_pen_input_device(bool disable)
 			disable ? "DISABLE" : "ENABLE");
 		goto nvt_set_pen_enable_out;
 	}
+
+	ts->pen_input_dev_enable = !disable;
 
 	msleep(35);
 
@@ -1390,19 +1403,6 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	NVT_LOG("suspend start\n");
 
 	bTouchIsAwake = 0;
-
-	/*
-	 * Close the pen input device before the IC goes to sleep, matching the
-	 * vendor driver.  Without this the pen path can still be reporting
-	 * while the IC is entering deep sleep, and the WDT recovery counter
-	 * then trips on the way down - a firmware reflash that lands during
-	 * blanking and fails, leaving the panel without a working touch IC
-	 * until the next resume.
-	 */
-	if (ts->pen_input_dev) {
-		NVT_LOG("if enable pen,will close it\n");
-		disable_pen_input_device(true);
-	}
 
 	if (ts->db_wakeup) {
 		/*---write command to enter "wakeup gesture mode"---*/

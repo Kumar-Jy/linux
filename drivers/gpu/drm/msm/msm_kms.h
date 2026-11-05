@@ -285,6 +285,8 @@ int msm_dsi_host_send_cmd_batch(struct mipi_dsi_host *host,
 
 /* applied from msm_atomic_commit_tail() while the commit holds the locks */
 u32 msm_dsi_manager_dfps_commit_apply(struct drm_device *dev, u32 fps);
+/* refresh rate the DSI controller is currently programmed for */
+u32 msm_dsi_host_dfps_get_fps(struct mipi_dsi_host *host);
 void msm_dsi_manager_dfps_latch(struct drm_device *dev, u32 fps);
 void msm_dsi_manager_dfps_pen(struct drm_device *dev, u32 fps);
 

@@ -40,6 +40,8 @@
 	pr_info("[%s] %s %d: " fmt, NVT_SPI_NAME, __func__, __LINE__, ##args)
 #define NVT_ERR(fmt, args...) \
 	pr_err("[%s] %s %d: " fmt, NVT_SPI_NAME, __func__, __LINE__, ##args)
+#define NVT_ERR_RL(fmt, args...) \
+	pr_err_ratelimited("[%s] %s %d: " fmt, NVT_SPI_NAME, __func__, __LINE__, ##args)
 
 //---Input device info.---
 #define NVT_TS_NAME "NVTCapacitiveTouchScreen"
@@ -94,6 +96,7 @@ struct nvt_ts_data {
 	int gesture_command_delayed;
 	bool irq_enabled;
 	bool pen_support;
+	bool pen_input_dev_enable;
 	bool wgp_stylus;
 	bool dev_pm_suspend;
 	int8_t phys[32];

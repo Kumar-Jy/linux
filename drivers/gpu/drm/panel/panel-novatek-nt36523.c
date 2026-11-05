@@ -152,6 +152,58 @@ static int nabu_sync_pen_fps(u32 fps)
 	return ret;
 }
 
+/*
+ * Re-apply the touch sync period without going through the VFP scheduler.
+ * Called from the panel init sequence, where the video engine is not running
+ * yet, so the batch path (which waits for an INTF scan line) would only burn
+ * its guard timeout.
+ *
+ * Vendor does exactly this from dsi_panel_post_enable() on every panel
+ * enable: the DDIC loses page 0x2A / reg 0x23 whenever it is powered down or
+ * reset on blank.  Without the re-apply a 60Hz session that blanks once comes
+ * back with the display at 60Hz but the touch sync at the 120Hz default, and
+ * the NT36523 firmware resets itself (0xFD storm -> Recover for fw reset ->
+ * firmware download races the next blank -> dead touch until the next wake).
+ */
+static int nabu_sync_pen_direct(u32 fps)
+{
+	struct panel_info *pinfo = nabu_sync_panel;
+	struct mipi_dsi_device *dsi0, *dsi1;
+	struct mipi_dsi_multi_context dsi_ctx = { .dsi = NULL };
+	u8 rate;
+
+	if (!pinfo || !pinfo->dsi[0])
+		return -ENODEV;
+
+	if (fps != 120 && fps != 60)
+		fps = 120;
+
+	dsi0 = pinfo->dsi[0];
+	dsi1 = pinfo->dsi[1];
+	rate = (fps == 120) ? 0x0d : 0x0c;
+
+	u8 page[2] = { 0xff, 0x2a };
+	u8 rate_buf[2] = { 0x23, rate };
+	u8 restore[2] = { 0xff, 0x10 };
+
+	dsi_ctx.dsi = dsi0;
+	mipi_dsi_dual_dcs_write_buffer_multi(&dsi_ctx, dsi0, dsi1, page,
+					     ARRAY_SIZE(page));
+	mipi_dsi_dual_dcs_write_buffer_multi(&dsi_ctx, dsi0, dsi1, rate_buf,
+					     ARRAY_SIZE(rate_buf));
+	usleep_range(1000, 1100);
+	mipi_dsi_dual_dcs_write_buffer_multi(&dsi_ctx, dsi0, dsi1, restore,
+					     ARRAY_SIZE(restore));
+
+	if (dsi_ctx.accum_err)
+		dev_warn(&dsi0->dev, "sync-pen reapply (%u Hz) failed: %d\n",
+			 fps, dsi_ctx.accum_err);
+	else
+		dev_info(&dsi0->dev, "sync-pen reapplied for %u Hz after init\n", fps);
+
+	return dsi_ctx.accum_err;
+}
+
 static int elish_boe_init_sequence(struct panel_info *pinfo)
 {
 	struct mipi_dsi_device *dsi0 = pinfo->dsi[0];
@@ -776,6 +828,14 @@ static int nabu_csot_init_sequence(struct panel_info *pinfo)
 	 */
 	msleep(120);
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x53, 0x2c);
+
+	/*
+	 * The DDIC was power-cycled and reset for this enable, so its touch
+	 * sync page (0x2A / 0x23) is back at the 120Hz default.  Re-apply the
+	 * rate the controller is actually running at (vendor does the same
+	 * from dsi_panel_post_enable on every enable).
+	 */
+	nabu_sync_pen_direct(msm_dsi_host_dfps_get_fps(dsi0->host));
 
 	return 0;
 }
