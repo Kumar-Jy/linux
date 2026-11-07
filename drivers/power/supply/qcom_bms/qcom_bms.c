@@ -648,20 +648,13 @@ static void qcom_bms_update_status(struct qcom_bms_info *info)
 	/* Charger state is authoritative; FG current is only a fallback. */
 	if (charge_done) {
 		new_status = POWER_SUPPLY_STATUS_FULL;
-	} else if (!input_present ||
-		   (fg_current_valid && fg_current < -QCOM_BMS_DISCHARGE_CURRENT_UA)) {
-		/*
-		 * A clearly negative current always means discharging, so check it before
-		 * the charger status. The PMIC status lags a long time after unplugging
-		 * (measured: still reports CHARGING a minute later); with the old order
-		 * the UI would keep showing "charging" after unplug.
-		 */
+	} else if (!input_present) {
 		new_status = POWER_SUPPLY_STATUS_DISCHARGING;
 	} else if (direct_status == POWER_SUPPLY_STATUS_CHARGING ||
 		   pmic_status == POWER_SUPPLY_STATUS_CHARGING) {
 		new_status = POWER_SUPPLY_STATUS_CHARGING;
 	} else if (pmic_status == POWER_SUPPLY_STATUS_DISCHARGING ||
-		   (fg_current_valid && fg_current < 0)) {
+		   (fg_current_valid && fg_current < -QCOM_BMS_DISCHARGE_CURRENT_UA)) {
 		new_status = POWER_SUPPLY_STATUS_DISCHARGING;
 	} else if (fg_current_valid && fg_current > 0)
 		new_status = POWER_SUPPLY_STATUS_CHARGING;
