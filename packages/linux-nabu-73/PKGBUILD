@@ -48,8 +48,8 @@ build() {
   make -s ARCH=arm64 kernelrelease > version
 
   unset LDFLAGS
-  make ${MAKEFLAGS} ARCH=arm64 Image Image.gz modules
-  make ${MAKEFLAGS} ARCH=arm64 DTC_FLAGS="-@" dtbs
+  make ${MAKEFLAGS:-"-j$(nproc)"} ARCH=arm64 Image Image.gz modules
+  make ${MAKEFLAGS:-"-j$(nproc)"} ARCH=arm64 DTC_FLAGS="-@" dtbs
 }
 
 _package_common() {
