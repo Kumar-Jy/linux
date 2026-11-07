@@ -1,3 +1,12 @@
+2026-11-07 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3:
+	- Linux: merge upstream stable Linux 7.3.3 (v7.3.3)
+	- Display & Touch: fix 60Hz touch sync across blank and prevent WDT recovery races
+	- Display & Backlight: fix 120<->60Hz dfps switching and KTZ8866 exponential curve
+	- Power & Battery: enable LN8000 33W direct fast charge, CC sticky window, and PMIC fixes
+	- Audio: add wired headphone playback DAI link in DTS, AFE port recovery, and stream close tweak
+	- Packaging: bump linux-sm8150 to 7.3.3
+
 2026-11-01 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.1-1:
 	- Power: restore 300ms hardware timer s2idle grace window to prevent immediate wakeups from power button release
