@@ -77,8 +77,12 @@ jobs:
               useradd -m builder
               echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
               git config --system --add safe.directory "*"
+              sed -i "s/#MAKEFLAGS=.*/MAKEFLAGS=\"-j\$(nproc)\"/" /etc/makepkg.conf
+              grep -q "^MAKEFLAGS=" /etc/makepkg.conf || echo "MAKEFLAGS=\"-j\$(nproc)\"" >> /etc/makepkg.conf
+              sed -i "s/COMPRESSZST=.*/COMPRESSZST=(zstd -c -z -q --threads=0 -)/" /etc/makepkg.conf
+              sed -i "s/COMPRESSXZ=.*/COMPRESSXZ=(xz -c -z - --threads=0)/" /etc/makepkg.conf
               chown -R builder:builder /work
-              su builder -c "cd /work && makepkg -s --noconfirm --skipchecksums"
+              su builder -c "cd /work && export MAKEFLAGS=\"-j\$(nproc)\" && makepkg -s --noconfirm --skipchecksums"
               cp -v /work/*.pkg.tar.* /output/
               chmod -R a+rw /output /work 2>/dev/null || true
             '
