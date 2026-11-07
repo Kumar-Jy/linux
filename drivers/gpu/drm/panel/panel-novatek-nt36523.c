@@ -1302,8 +1302,8 @@ static const struct drm_display_mode nabu_csot_modes[] = {
 		.hsync_end = 1600 + 88 + 40,
 		.htotal = 1600 + 88 + 40 + 40,
 		.vdisplay = 2560,
-		.vsync_start = 2560 + 26,
-		.vsync_end = 2560 + 26 + 4,
+		.vsync_start = 2560 + 26 + 2758,
+		.vsync_end = 2560 + 26 + 4 + 2758,
 		.vtotal = (2560 + 26 + 4 + 168) * 2,
 	},
 };
