@@ -27,7 +27,7 @@ This document tracks the hardware support status and driver implementation detai
 | **Stylus (Input)** | Xiaomi Smart Pen (Drawing & Input) | ✅ Working | `NVTCapacitivePen` (`/dev/input/event4`), 4096 pressure levels, tilt, barrel buttons |
 | **Stylus (Charging)**| Wireless Magnetic Pen Charging | ✅ Working | Renesas IDTP9418 wireless charger (`/sys/class/power_supply/idtp9418`), I2C `3-003b` |
 | **Accessories** | Magnetic Pogo Keyboard Cover | ✅ Working | Dedicated DWC3 host controller (`&usb_2` / `a800000.usb`), preserved pinctrl across display blank |
-| **Battery & Charging**| 33W Fast Charging & PM8150B BMS | ✅ Working | LN8000 33W direct charge pump + PM8150B coordinator, 5s CC sticky window, safe <3.2V pre-charge cutoff |
+| **Battery & Charging**| 33W Fast Charging & PM8150B BMS | ✅ Working | LN8000 33W direct charge pump + PM8150B coordinator, accurate USBIN telemetry & 2:1 ratio, 5s CC sticky window |
 | **Sleep** | S2idle Suspend & Resume | ✅ Working | S2idle deep sleep (`0x11`), 300ms power-key hardware grace window, panel/touch wake-up |
 | **USB** | USB Type-C 2.0 & OTG | ✅ Working | DWC3 OTG controller (`&usb_1` / `a600000.usb`), high-speed D+/D- role switching |
 | **External Display**| USB DisplayLink Output | ✅ Working | Supported via DisplayLink USB docks (`evdi` module + DisplayLink daemon) |
@@ -79,5 +79,5 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the pristine upstream 
 - **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
 ### 6. Packaging & UKI
-- **Package**: `linux-nabu-7.3.3` (`arch=('aarch64')`, kernel release `7.3.3-krjy`).
+- **Package**: `linux-nabu-7.3.3-1` (`arch=('aarch64')`, kernel release `7.3.3-1-krjy`).
 - **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.

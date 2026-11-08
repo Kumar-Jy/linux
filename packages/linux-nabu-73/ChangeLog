@@ -1,3 +1,8 @@
+2026-11-08 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3-1:
+	- Power: fix PM8150B USBIN voltage/current scaling factors and LN8000 direct charge input current reporting
+	- Packaging: bump linux-nabu to 7.3.3-1 (kernel release 7.3.3-1-krjy)
+
 2026-11-07 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.3:
 	- Linux: merge upstream stable Linux 7.3.3 (v7.3.3)
