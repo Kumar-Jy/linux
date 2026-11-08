@@ -633,20 +633,24 @@ static int smb_get_prop_health(void *priv, int *val)
 static int smb_get_voltage_now(void *priv, int *val)
 {
 	struct smb_chip *chip = priv;
-	int ret;
 
-	ret = smb_get_iio_chan(chip, chip->usb_in_v_chan, val);
-	if (!ret)
-		*val *= 16;
-
-	return ret;
+	/*
+	 * usb_in_v_chan uses ADC5_USB_IN_V_16 with qcom,pre-scaling = <1 16>.
+	 * The IIO ADC driver already scales the measurement back up by 16.
+	 */
+	return smb_get_iio_chan(chip, chip->usb_in_v_chan, val);
 }
 
 static int smb_op_current_now(void *priv, int *val)
 {
 	struct smb_chip *chip = priv;
+	int ret;
 
-	return smb_get_iio_chan(chip, chip->usb_in_i_chan, val);
+	ret = smb_get_iio_chan(chip, chip->usb_in_i_chan, val);
+	if (!ret)
+		*val = *val * 5; /* 0.2 V/A scale factor in buck charging mode */
+
+	return ret;
 }
 
 static int smb_set_authenticated(void *priv, bool authenticated)
