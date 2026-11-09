@@ -2574,13 +2574,6 @@ BuildKernel() {
     chmod 755 $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
     cp $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer $RPM_BUILD_ROOT/lib/modules/$KernelVer/$InstallName
 
-    # hmac sign the kernel for FIPS
-    %{log_msg "hmac sign the kernel for FIPS"}
-    %{log_msg "Creating hmac file: $RPM_BUILD_ROOT/%{image_install_path}/.vmlinuz-$KernelVer.hmac"}
-    ls -l $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
-    (cd $RPM_BUILD_ROOT/%{image_install_path} && sha512hmac $InstallName-$KernelVer) > $RPM_BUILD_ROOT/%{image_install_path}/.vmlinuz-$KernelVer.hmac;
-    cp $RPM_BUILD_ROOT/%{image_install_path}/.vmlinuz-$KernelVer.hmac $RPM_BUILD_ROOT/lib/modules/$KernelVer/.vmlinuz.hmac
-
     if [ $DoModules -eq 1 ]; then
 	%{log_msg "Install modules in RPM_BUILD_ROOT"}
 	# Override $(mod-fw) because we don't want it to install any firmware
@@ -3033,11 +3026,6 @@ BuildKernel() {
 	mv $DtbloaderImage.signed $DtbloaderImage
 %endif
 	chmod 755 $DtbloaderImage
-
-	%{log_msg "hmac sign the DTB-loader kernel for FIPS"}
-	pushd $(dirname $DtbloaderImage)
-	sha512hmac $(basename $DtbloaderImage) > .$(basename $DtbloaderImage).hmac
-	popd
     fi # -z "$Variant" || "$Variant" == "debug"
 # with_dtbloader
 %endif
@@ -4704,8 +4692,6 @@ fi\
 %%license linux-%{KVERREL}/COPYING-%{version}-%{release}\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/vmlinuz\
 %ghost /%{image_install_path}/vmlinuz-%{KVERREL}%{?3:+%{3}}\
-/lib/modules/%{KVERREL}%{?3:+%{3}}/.vmlinuz.hmac \
-%ghost /%{image_install_path}/.vmlinuz-%{KVERREL}%{?3:+%{3}}.hmac \
 %ifarch %{dtb_arches}\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/dtb \
 %ghost /%{image_install_path}/dtb-%{KVERREL}%{?3:+%{3}} \
@@ -4789,13 +4775,11 @@ fi\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.builtin*\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/symvers.%compext\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/vmlinuz-dtbloader.efi\
-/lib/modules/%{KVERREL}%{?3:+%{3}}/.vmlinuz-dtbloader.efi.hmac\
 %ghost %attr(0644, root, root) /boot/System.map-%{KVERREL}%{?3:+%{3}}\
 %ghost %attr(0644, root, root) /boot/config-%{KVERREL}%{?3:+%{3}}\
 %ghost %attr(0600, root, root) /boot/initramfs-%{KVERREL}%{?3:+%{3}}.img\
 %ghost %attr(0644, root, root) /boot/symvers-%{KVERREL}%{?3:+%{3}}.%compext\
 %ghost %attr(0755, root, root) /%{image_install_path}/vmlinuz-%{KVERREL}%{?3:+%{3}}\
-%ghost %attr(0644, root, root) /%{image_install_path}/.vmlinuz-%{KVERREL}%{?3:+%{3}}.hmac\
 %ifarch %{dtb_arches}\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/dtb \
 %ghost /%{image_install_path}/dtb-%{KVERREL}%{?3:+%{3}} \
