@@ -12,7 +12,7 @@ This document tracks the hardware support status and driver implementation detai
 | **Touch** | Capacitive Multi-touch & Pen Sync | ✅ Working | Novatek NT36523 SPI touchscreen (`novatek/novatek_nt36523_fw.bin`), 10-point touch, touch sync preserved across 60Hz blank/wake |
 | **Backlight** | KTZ8866 Backlight Controller | ✅ Working | 26.4V OVP, 23mA full scale, 2048-entry non-linear exponential brightness curve (flicker-free at 60Hz/120Hz) |
 | **Graphics** | Adreno 640 GPU 3D Acceleration | ✅ Working | Mesa Turnip Vulkan 1.3 (`0x6040001`), Freedreno OpenGL 4.6, GMU firmware v2.0.261 |
-| **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 dual-core architecture |
+| **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 dual-core architecture, VA-API browser acceleration |
 | **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire |
 | **Audio (Headphones)**| Wired Type-C / 3.5mm Headphone Jack | ✅ Working | Dedicated `MultiMedia3` frontend + `SLIMBUS_0_RX <-> AIF1_PB` DAI-link on WCD9340 with ADSP port recovery |
 | **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
@@ -79,5 +79,5 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the pristine upstream 
 - **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
 ### 6. Packaging & UKI
-- **Package**: `linux-nabu-7.3.3-1` (`arch=('aarch64')`, kernel release `7.3.3-1-krjy`).
+- **Package**: `linux-nabu-7.3.3-2` (`arch=('aarch64')`, kernel release `7.3.3-2-krjy`).
 - **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.

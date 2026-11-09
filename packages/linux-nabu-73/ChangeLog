@@ -1,3 +1,9 @@
+2026-11-09 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3-2:
+	- Power: add TI BQ25970 direct charger support for alternative hardware revisions
+	- Media: restore Iris1/SM8150 cached_capture, display delay, and decode-order output for VA-API (fixes browser HEVC/H.265 hardware decode)
+	- Packaging: bump linux-nabu to 7.3.3-2 (kernel release 7.3.3-2-krjy)
+
 2026-11-08 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.3-1:
 	- Power: fix PM8150B USBIN voltage/current scaling factors and LN8000 direct charge input current reporting
