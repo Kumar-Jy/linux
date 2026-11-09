@@ -689,6 +689,17 @@ iris_hfi_gen1_packet_session_set_property(struct hfi_session_set_property_pkt *p
 		packet->shdr.hdr.size += sizeof(*multi);
 		break;
 	}
+	case HFI_PROPERTY_PARAM_VDEC_OUTPUT_ORDER: {
+		u32 *order = pdata;
+
+		if (*order != HFI_OUTPUT_ORDER_DECODE &&
+		    *order != HFI_OUTPUT_ORDER_DISPLAY)
+			return -EINVAL;
+
+		packet->data[1] = *order;
+		packet->shdr.hdr.size += sizeof(u32);
+		break;
+	}
 	case HFI_PROPERTY_PARAM_BUFFER_SIZE_ACTUAL: {
 		struct hfi_buffer_size_actual *in = pdata, *sz = prop_data;
 
