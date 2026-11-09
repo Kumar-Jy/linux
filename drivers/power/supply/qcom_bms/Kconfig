@@ -23,6 +23,18 @@ config QCOM_BMS_LN8000
 
 	  If unsure, say N.
 
+config QCOM_BMS_BQ25970
+	tristate "TI BQ25970 / BQ2597x direct charger"
+	depends on QCOM_BMS
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  Enable support for the Texas Instruments BQ25970 / BQ2597x
+	  switched-capacitor direct charger present on secondary hardware
+	  revisions of Xiaomi Pad 5 (nabu).
+
+	  If unsure, say N.
+
 config QCOM_BMS_DS28E16
 	tristate "Maxim DS28E16 Xiaomi battery authentication"
 	depends on QCOM_BMS
