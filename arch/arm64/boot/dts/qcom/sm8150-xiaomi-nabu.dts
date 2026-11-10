@@ -674,19 +674,6 @@
 		lionsemi,iin-reg-disable;
 		lionsemi,vbat-reg-disable;
 	};
-
-	bq25970_charger: charger@65 {
-		compatible = "ti,bq25970";
-		reg = <0x65>;
-
-		interrupt-parent = <&tlmm>;
-		interrupts = <55 IRQ_TYPE_LEVEL_LOW>;
-
-		/* Sunwoda 8720mAh battery profile */
-		ti,bat-ovp-threshold-microvolt = <4560000>;
-		ti,bus-ovp-threshold-microvolt = <12750000>;
-		ti,bus-ocp-threshold-microamp = <3750000>;
-	};
 };
 
 &i2c7 {
