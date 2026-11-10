@@ -186,6 +186,7 @@ jobs:
           fi
           title="Linux Nabu ${pkgver}-${pkgrel}"
 
+          export PACKAGE="$package"
           export PKGVER="$pkgver"
           export PKGREL="$pkgrel"
           export BRANCH="$branch"
@@ -195,14 +196,43 @@ jobs:
           import glob
           import inspect
           import os
+          import re
           import zipfile
 
+          package = os.environ.get('PACKAGE', 'linux-nabu-73')
           pkgver = os.environ['PKGVER']
           pkgrel = os.environ['PKGREL']
           branch = os.environ['BRANCH']
           sha = os.environ['SHA']
 
           os.makedirs('release-assets', exist_ok=True)
+
+          # Dynamically parse release changelog from package ChangeLog
+          changelog_section = ""
+          cl_path = os.path.join('packages', package, 'ChangeLog')
+          if os.path.exists(cl_path):
+              try:
+                  with open(cl_path, 'r', encoding='utf-8', errors='ignore') as cf:
+                      cl_text = cf.read()
+                  m = re.search(r'(\d{4}-\d{2}-\d{2}[^\n]*\n\s*\*\s*' + re.escape(f'{pkgver}-{pkgrel}') + r':\n(?:[ \t]+-[^\n]*\n*)+)', cl_text)
+                  if not m:
+                      m = re.search(r'(\d{4}-\d{2}-\d{2}[^\n]*\n(?:\s*\*[^\n]*\n)?(?:[ \t]+-[^\n]*\n*)+)', cl_text)
+                  if m:
+                      raw_entry = m.group(1).strip()
+                      lines = raw_entry.splitlines()
+                      bullets = []
+                      for line in lines[1:]:
+                          stripped = line.strip()
+                          if stripped.startswith('*'):
+                              continue
+                          if stripped.startswith('-'):
+                              bullets.append(f"- {stripped.lstrip('-').strip()}")
+                          elif stripped:
+                              bullets.append(f"  {stripped}")
+                      bullets_text = '\n'.join(bullets) if bullets else raw_entry
+                      changelog_section = f"### 📝 Changes in {pkgver}-{pkgrel}\n\n{bullets_text}\n\n---\n"
+              except Exception as e:
+                  print(f"::warning::Failed to parse ChangeLog: {e}")
 
           distro_files = {}
           for distro in ['arch', 'ubuntu', 'fedora']:
@@ -236,7 +266,7 @@ jobs:
 
           ---
 
-          ### 📦 Distribution Packages
+          {changelog_section}### 📦 Distribution Packages
 
           | Distribution | Package Archive | Included Files |
           | :--- | :--- | :--- |
@@ -306,3 +336,8 @@ jobs:
             echo "::endgroup::"
           fi
           gh release view "$tag" --repo "$repo" --json name,url --jq '"[name=\(.name)] url: \(.url)"'
+
+          # Trigger downstream package repository sync in nabu-pkgs
+          echo "Triggering Arch and Ubuntu repository sync in nabu-pkgs..."
+          gh workflow run "Arch pkgs" --repo Kumar-Jy/nabu-pkgs --ref arch -f build_linux_nabu_73=true 2>/dev/null || true
+          gh workflow run "ubuntu-repo.yml" --repo Kumar-Jy/nabu-pkgs --ref ubuntu 2>/dev/null || true
