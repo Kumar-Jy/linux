@@ -1,3 +1,9 @@
+2026-11-10 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3-3:
+	- Power: drop unpopulated TI BQ25970 driver & DTS node, eliminating GPIO 55 interrupt collision with LN8000 (fixes ADB USB host PMIC hard-reset)
+	- DTS: allocate 1MB for panic crash dumps and 3MB for console in ramoops pstore
+	- Packaging: bump linux-nabu to 7.3.3-3 (kernel release 7.3.3-3-krjy)
+
 2026-11-09 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.3-2:
 	- Power: add TI BQ25970 direct charger support for alternative hardware revisions
