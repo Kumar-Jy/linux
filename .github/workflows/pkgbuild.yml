@@ -29,11 +29,16 @@ jobs:
         id: pkg
         run: |
           ref="${{ github.ref_name }}"
-          if [[ "$ref" != *"7.3"* && "$ref" != *"73"* ]]; then
-            echo "ERROR: branch '$ref' is not supported by this workflow (7.3 only)" >&2
+          if [[ "$ref" == *"7.4"* || "$ref" == *"74"* ]]; then
+            package="linux-nabu-74"
+          elif [[ "$ref" == *"7.3"* || "$ref" == *"73"* ]]; then
+            package="linux-nabu-73"
+          elif [[ "$ref" == *"7.2"* || "$ref" == *"72"* ]]; then
+            package="linux-nabu-72"
+          else
+            echo "ERROR: branch '$ref' is not supported by this workflow" >&2
             exit 1
           fi
-          package="linux-nabu-73"
           pkgver=$(grep -m1 '^pkgver=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
           pkgrel=$(grep -m1 '^pkgrel=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
           echo "package=$package" >> "$GITHUB_OUTPUT"
@@ -170,7 +175,15 @@ jobs:
           branch="${{ github.ref_name }}"
           repo="${{ github.repository }}"
 
-          package="linux-nabu-73"
+          if [[ "$branch" == *"7.4"* || "$branch" == *"74"* ]]; then
+            package="linux-nabu-74"
+          elif [[ "$branch" == *"7.3"* || "$branch" == *"73"* ]]; then
+            package="linux-nabu-73"
+          elif [[ "$branch" == *"7.2"* || "$branch" == *"72"* ]]; then
+            package="linux-nabu-72"
+          else
+            package="linux-nabu-74"
+          fi
           pkgver=$(grep -m1 '^pkgver=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
           pkgrel=$(grep -m1 '^pkgrel=' "packages/$package/PKGBUILD" | cut -d= -f2- | tr -d '"')
           if [ -z "$pkgver" ] || [ -z "$pkgrel" ]; then
@@ -179,7 +192,7 @@ jobs:
           fi
 
           safe_branch="${branch//\//-}"
-          if [ "$branch" = "7.3" ] || [ "$branch" = "nabu/7.3.y" ]; then
+          if [ "$branch" = "7.3" ] || [ "$branch" = "nabu/7.3.y" ] || [ "$branch" = "7.4" ] || [ "$branch" = "nabu/7.4.y" ]; then
             tag="v${pkgver}-${pkgrel}"
           else
             tag="v${pkgver}-${pkgrel}-${safe_branch}"
