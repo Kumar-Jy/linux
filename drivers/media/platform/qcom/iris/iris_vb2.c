@@ -3,6 +3,8 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/dma-mapping.h>
+#include <linux/module.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-mem2mem.h>
@@ -13,6 +15,23 @@
 #include "iris_vdec.h"
 #include "iris_venc.h"
 #include "iris_power.h"
+
+static bool cached_capture;
+module_param(cached_capture, bool, 0444);
+MODULE_PARM_DESC(cached_capture,
+		 "Use cacheable H.264/HEVC/VP9 CAPTURE MMAP buffers on legacy Iris1");
+
+static bool iris1_use_cached_capture(struct iris_inst *inst,
+				     struct vb2_queue *q)
+{
+	return cached_capture &&
+	       inst->core->iris_platform_data->legacy_vpu5 &&
+	       (inst->codec == V4L2_PIX_FMT_H264 ||
+		inst->codec == V4L2_PIX_FMT_HEVC ||
+		inst->codec == V4L2_PIX_FMT_VP9) &&
+	       V4L2_TYPE_IS_CAPTURE(q->type) &&
+	       q->memory == VB2_MEMORY_MMAP;
+}
 
 static int iris_check_inst_mbpf(struct iris_inst *inst)
 {
@@ -118,6 +137,15 @@ int iris_vb2_queue_setup(struct vb2_queue *q,
 
 	core = inst->core;
 	f = V4L2_TYPE_IS_OUTPUT(q->type) ? inst->fmt_src : inst->fmt_dst;
+
+	if (iris1_use_cached_capture(inst, q)) {
+		q->dma_dir = DMA_FROM_DEVICE;
+		q->non_coherent_mem = true;
+		dev_info(core->dev,
+			 "Iris1: using cacheable %s CAPTURE MMAP buffers\n",
+			 inst->codec == V4L2_PIX_FMT_H264 ? "H.264" :
+			 inst->codec == V4L2_PIX_FMT_HEVC ? "HEVC" : "VP9");
+	}
 
 	if (*num_planes) {
 		if (*num_planes != f->fmt.pix_mp.num_planes ||

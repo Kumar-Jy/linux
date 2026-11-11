@@ -22,3 +22,14 @@ const struct vpu_ops iris_vpu2_ops = {
 	.set_preset_registers = iris_vpu_set_preset_registers,
 	.interrupt_init = iris_vpu_interrupt_init,
 };
+
+const struct vpu_ops iris_vpu5_ops = {
+	.power_off_hw = iris_vpu5_power_off_hw,
+	.power_on_hw = iris_vpu5_power_on_hw,
+	.power_off_controller = iris_vpu5_power_off_controller,
+	.power_on_controller = iris_vpu5_power_on_controller,
+	.calc_freq = iris_vpu2_calc_freq,
+	.set_hwmode = iris_vpu_set_hwmode,
+	.set_preset_registers = iris_vpu_set_preset_registers,
+	.interrupt_init = iris_vpu_interrupt_init,
+};

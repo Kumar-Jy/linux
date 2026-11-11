@@ -25,6 +25,21 @@
 
 #include "dsi.h"
 #include "dsi.xml.h"
+
+/*
+ * hw 2.2+ private register: DSI_DMA_SCHEDULE_CTRL. BIT(28) arms per-line DMA
+ * scheduling and the low 16 bits carry the scan line at which the DMA should
+ * be released. The vendor driver uses it to send commands inside VFP instead
+ * of in the middle of the active scan; the generated register table does not
+ * describe it, so it is defined here.
+ */
+/*
+ * DSI_DMA_SCHEDULE_CTRL lives at 0x100 from the physical controller base.
+ * ctrl_base is shifted by cfg->io_offset (DSI_6G_REG_SHIFT = 4), so the
+ * offset used here must be 0x100 - 4; otherwise every schedule write lands
+ * on 0x104 while the real schedule register at 0x100 stays zero.
+ */
+#define REG_DSI_DMA_SCHEDULE_CTRL			0x000000fc
 #include "sfpb.xml.h"
 #include "dsi_cfg.h"
 #include "msm_dsc_helper.h"
@@ -99,6 +114,13 @@ static int dsi_get_version(const void __iomem *base, u32 *major, u32 *minor)
 		DSI_CLK_CTRL_BYTECLK_ON | DSI_CLK_CTRL_ESCCLK_ON | \
 		DSI_CLK_CTRL_FORCE_ON_DYN_AHBM_HCLK)
 
+/*
+ * Diagnostic knob for the VFP line at which a scheduled batch is released.
+ * The computed value is VBP + VSA + VACTIVE + 1; this offset lets us sweep
+ * the line at runtime instead of rebuilding for every candidate.
+ */
+
+
 struct msm_dsi_host {
 	struct mipi_dsi_host base;
 
@@ -113,6 +135,33 @@ struct msm_dsi_host {
 
 	int num_bus_clks;
 	struct clk_bulk_data bus_clks[DSI_BUS_CLK_MAX];
+
+	/* set while sending a command that must not wait for a frame boundary */
+	bool skip_video_wait;
+
+	/* set while a batch is armed but must be fired by the caller */
+	bool defer_fire;
+
+	/*
+	 * Set when a batch is armed and waiting for the frame boundary.  The
+	 * VIDEO_DONE interrupt fires the DMA straight from the ISR, which is
+	 * the mainline equivalent of the vendor's vsync-triggered
+	 * DSI_CTRL_CMD_DEFER_TRIGGER path: waiting for a completion and then
+	 * triggering from the woken thread costs tens of microseconds and at
+	 * 120Hz the VFP is only ~96us.
+	 */
+	bool pending_fire;
+
+	/* slave link to trigger together with this one from the ISR */
+	struct msm_dsi_host *pending_slave;
+
+	/*
+	 * Non-zero while a batch must be released by the controller at a
+	 * specific scan line (the vendor's DSI_DMA_SCHEDULE_CTRL, 0x100).
+	 * line_no counts from the start of the frame: VBP + VSA + VACTIVE + 1,
+	 * i.e. the first line of the vertical front porch.
+	 */
+	u32 dma_sched_line;
 
 	struct clk *byte_clk;
 	struct clk *esc_clk;
@@ -187,6 +236,13 @@ struct msm_dsi_host {
 	bool power_on;
 	bool enabled;
 	int irq;
+
+	/* dfps: baseline timing that every request is computed from */
+	u32 dfps_base_fps;
+	u32 dfps_base_vtotal;
+	u32 dfps_base_vsync_start;
+	u32 dfps_base_vsync_end;
+	u32 dfps_cur_fps;
 };
 
 static inline u32 dsi_read(struct msm_dsi_host *msm_host, u32 reg)
@@ -748,6 +804,21 @@ static void dsi_intr_ctrl(struct msm_dsi_host *msm_host, u32 mask, int enable)
 	spin_lock_irqsave(&msm_host->intr_lock, flags);
 	intr = dsi_read(msm_host, REG_DSI_INTR_CTRL);
 
+	/*
+	 * REG_DSI_INTR_CTRL serves two purposes: reads return the pending
+	 * status bits, writes set the enable bits, and the status bit of an
+	 * interrupt sits exactly one bit below its enable counterpart
+	 * (VIDEO_DONE = BIT(16) vs MASK_VIDEO_DONE = BIT(17), and so on).
+	 * Writing the value read straight back therefore hands the hardware
+	 * the pending status bits as well, which clears them as a side
+	 * effect. That is what made DSI_IRQ_VIDEO_DONE never reach
+	 * dsi_host_irq(), so dsi_wait4video_done() always burned its full
+	 * 70 ms timeout and commands were pushed out at unsafe moments.
+	 * Strip the status bits before touching the enable bits.
+	 */
+	intr &= ~(DSI_IRQ_CMD_DMA_DONE | DSI_IRQ_CMD_MDP_DONE |
+		  DSI_IRQ_VIDEO_DONE | DSI_IRQ_BTA_DONE | DSI_IRQ_ERROR);
+
 	if (enable)
 		intr |= mask;
 	else
@@ -797,7 +868,16 @@ dsi_get_cmd_fmt(const enum mipi_dsi_pixel_format mipi_fmt)
 
 static void dsi_ctrl_disable(struct msm_dsi_host *msm_host)
 {
-	dsi_write(msm_host, REG_DSI_CTRL, 0);
+	u32 ctrl = dsi_read(msm_host, REG_DSI_CTRL);
+
+	/*
+	 * Only drop the engine enables.  Writing the whole register to 0 also
+	 * clears CLK_EN/lanes, and on this controller those only come back once
+	 * the PHY clock domain is up - power_on() then cannot restore them and
+	 * every following command times out with -110.
+	 */
+	ctrl &= ~(DSI_CTRL_ENABLE | DSI_CTRL_VID_MODE_EN | DSI_CTRL_CMD_MODE_EN);
+	dsi_write(msm_host, REG_DSI_CTRL, ctrl);
 }
 
 static bool msm_dsi_host_version_geq(struct msm_dsi_host *msm_host,
@@ -885,9 +965,15 @@ static void dsi_ctrl_enable(struct msm_dsi_host *msm_host,
 	data |= DSI_TRIG_CTRL_MDP_TRIGGER(TRIGGER_NONE);
 	data |= DSI_TRIG_CTRL_DMA_TRIGGER(TRIGGER_SW);
 	data |= DSI_TRIG_CTRL_STREAM(msm_host->channel);
-	if ((cfg_hnd->major == MSM_DSI_VER_MAJOR_6G) &&
-		(cfg_hnd->minor >= MSM_DSI_6G_VER_MINOR_V1_2))
-		data |= DSI_TRIG_CTRL_BLOCK_DMA_WITHIN_FRAME;
+	/*
+	 * Do NOT set DSI_TRIG_CTRL_BLOCK_DMA_WITHIN_FRAME.  mainline sets it for
+	 * 6G v1.2+, but the vendor driver never does, and its meaning is "hold
+	 * the DMA until the MDP goes idle" - not "until the frame boundary".
+	 * With it set, a command sent at VFP start is held until the MDP is
+	 * idle again, which lands it inside the active scan and whites the
+	 * panel.  Measured: TRIG_CTRL read 0x80001004 (bit12=1) while chasing
+	 * exactly that symptom.
+	 */
 	dsi_write(msm_host, REG_DSI_TRIG_CTRL, data);
 
 	data = DSI_CLKOUT_TIMING_CTRL_T_CLK_POST(phy_shared_timings->clk_post) |
@@ -999,16 +1085,57 @@ static void dsi_timing_setup(struct msm_dsi_host *msm_host, bool is_bonded_dsi)
 	u32 hs_start = 0, vs_start = 0; /* take sync start as 0 */
 	u32 h_total = mode->htotal;
 	u32 v_total = mode->vtotal;
+	u32 vsync_start = mode->vsync_start;
+	u32 vsync_end = mode->vsync_end;
 	u32 hs_end = mode->hsync_end - mode->hsync_start;
-	u32 vs_end = mode->vsync_end - mode->vsync_start;
+	u32 vs_end;
 	u32 ha_start = h_total - mode->hsync_start;
 	u32 ha_end = ha_start + mode->hdisplay;
-	u32 va_start = v_total - mode->vsync_start;
-	u32 va_end = va_start + mode->vdisplay;
+	u32 va_start, va_end;
 	u32 hdisplay = mode->hdisplay;
 	u32 wc;
 	int ret;
 	bool wide_bus_enabled = msm_dsi_host_is_wide_bus_enabled(&msm_host->base);
+
+	/*
+	 * dfps stretches VFP instead of touching the pixel clock, so the
+	 * vertical timing can differ from what the DRM mode describes. Apply
+	 * that delta here too: otherwise every atomic commit (cursor blink,
+	 * any frame update) re-runs this function with the untouched mode and
+	 * silently restores the base refresh rate.
+	 */
+	if (msm_host->dfps_base_fps &&
+	    msm_host->dfps_cur_fps != msm_host->dfps_base_fps) {
+		u32 dfps_vtotal;
+
+		dfps_vtotal = DIV_ROUND_CLOSEST_ULL(
+			(u64)msm_host->dfps_base_vtotal *
+			msm_host->dfps_base_fps, msm_host->dfps_cur_fps);
+		v_total = dfps_vtotal;
+		/*
+		 * Keep vsync where it is: the extra blanking belongs entirely in
+		 * the vertical front porch. Pushing vsync back instead grows
+		 * VBP, which is not what "immediate porch mode VFP" means and
+		 * makes the panel re-sync visibly (a flash on every switch).
+		 * Vendor only ever touches v_front_porch here.
+		 */
+	}
+
+	vs_end = vsync_end - vsync_start;
+
+	/*
+	 * While a dfps switch is active only vtotal moves.  Deriving va_start
+	 * from vtotal - vsync_start would drag the active window down by the
+	 * added blanking (60Hz: 172 -> 2930), making the controller scan a
+	 * different part of the frame than the DPU - the panel then repeats
+	 * the image on the way back to 120Hz.  Vendor keeps the active window
+	 * fixed and puts the whole delta in VFP, so use the base mode here.
+	 */
+	if (msm_host->dfps_cur_fps && msm_host->dfps_base_vtotal)
+		va_start = msm_host->dfps_base_vtotal - msm_host->dfps_base_vsync_start;
+	else
+		va_start = v_total - vsync_start;
+	va_end = va_start + mode->vdisplay;
 
 	DBG("");
 
@@ -1202,6 +1329,15 @@ static void dsi_wait4video_done(struct msm_dsi_host *msm_host)
 	u32 ret = 0;
 	struct device *dev = &msm_host->pdev->dev;
 
+	/*
+	 * Clear a stale pending VIDEO_DONE before unmasking it: the status bit
+	 * lives one bit below the enable bit in the same register, and a
+	 * leftover pending bit fires the ISR immediately, releasing the DMA at
+	 * an arbitrary scan line (vendor clears first, dsi_ctrl.c:1051).
+	 */
+	dsi_write(msm_host, REG_DSI_INTR_CTRL,
+		  dsi_read(msm_host, REG_DSI_INTR_CTRL) |
+		  DSI_IRQ_VIDEO_DONE | DSI_IRQ_MASK_VIDEO_DONE);
 	dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_VIDEO_DONE, 1);
 
 	reinit_completion(&msm_host->video_comp);
@@ -1212,7 +1348,12 @@ static void dsi_wait4video_done(struct msm_dsi_host *msm_host)
 	if (ret == 0)
 		DRM_DEV_ERROR(dev, "wait for video done timed out\n");
 
-	dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_VIDEO_DONE, 0);
+	/*
+	 * Mask intentionally left enabled: reprogramming INT_CTRL here costs
+	 * two register read-modify-writes between the vblank interrupt and the
+	 * DMA trigger, and at 120Hz the entire VFP is only ~96us.  The caller
+	 * clears it right after the trigger.
+	 */
 }
 
 static void dsi_wait4video_eng_busy(struct msm_dsi_host *msm_host)
@@ -1234,8 +1375,15 @@ static void dsi_wait4video_eng_busy(struct msm_dsi_host *msm_host)
 
 	if (msm_host->power_on && msm_host->enabled) {
 		dsi_wait4video_done(msm_host);
-		/* delay 4 ms to skip BLLP */
-		usleep_range(2000, 4000);
+		/*
+		 * Do NOT sleep here.  The original 2-4ms delay exists to skip
+		 * the BLLP of command mode, but in video mode VIDEO_DONE is the
+		 * start of VFP and VFP lasts only ~96us at 120Hz / ~600us at
+		 * 60Hz.  Sleeping 2-4ms lands the page-0x2A write straight in
+		 * the active scan, which is exactly the white/garbled panel
+		 * observed.  Measured: the timeout error never fires, so the
+		 * interrupt does arrive - the sleep was the only problem.
+		 */
 	}
 }
 
@@ -1323,9 +1471,18 @@ void dsi_tx_buf_put_6g(struct msm_dsi_host *msm_host)
 
 /*
  * prepare cmd buffer to be txed
+ *
+ * @offset: write position inside the tx buffer (0 for a single command)
+ * @last:   mark this packet as the last one; the controller triggers the
+ *          DMA transfer when it reaches a packet flagged with BIT(7), so a
+ *          batch of commands is queued with offset/last and released by a
+ *          single dsi_cmd_dma_tx() call - the vendor's DEFER_TRIGGER
+ *          behaviour, where several DCS commands go out inside one BLLP
+ *          window instead of one scan-interrupting burst each.
  */
 static int dsi_cmd_dma_add(struct msm_dsi_host *msm_host,
-			   const struct mipi_dsi_msg *msg)
+			   const struct mipi_dsi_msg *msg,
+			   u32 offset, bool last)
 {
 	const struct msm_dsi_cfg_handler *cfg_hnd = msm_host->cfg_hnd;
 	struct mipi_dsi_packet packet;
@@ -1340,7 +1497,7 @@ static int dsi_cmd_dma_add(struct msm_dsi_host *msm_host,
 	}
 	len = (packet.size + 3) & (~0x3);
 
-	if (len > msm_host->tx_size) {
+	if (offset + len > msm_host->tx_size) {
 		pr_err("%s: packet size is too big\n", __func__);
 		return -EINVAL;
 	}
@@ -1352,11 +1509,13 @@ static int dsi_cmd_dma_add(struct msm_dsi_host *msm_host,
 		return ret;
 	}
 
+	data += offset;
+
 	/* MSM specific command format in memory */
 	data[0] = packet.header[1];
 	data[1] = packet.header[2];
 	data[2] = packet.header[0];
-	data[3] = BIT(7); /* Last packet */
+	data[3] = last ? BIT(7) : 0; /* Last packet */
 	if (mipi_dsi_packet_format_is_long(msg->type))
 		data[3] |= BIT(6);
 	if (msg->rx_buf && msg->rx_len)
@@ -1372,6 +1531,11 @@ static int dsi_cmd_dma_add(struct msm_dsi_host *msm_host,
 
 	if (cfg_hnd->ops->tx_buf_put)
 		cfg_hnd->ops->tx_buf_put(msm_host);
+
+	if (msm_host->dma_sched_line)
+		dev_dbg(&msm_host->pdev->dev, "diag: dma_add id=%d off=%u len=%u last=%d hdr=%02x %02x %02x %02x\n",
+			 msm_host->id, offset, len, last,
+			 data[0], data[1], data[2], data[3]);
 
 	return len;
 }
@@ -1441,12 +1605,15 @@ int dsi_dma_base_get_v2(struct msm_dsi_host *msm_host, uint64_t *dma_base)
 	return 0;
 }
 
-static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len)
+static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len,
+			  bool own_trigger)
 {
 	const struct msm_dsi_cfg_handler *cfg_hnd = msm_host->cfg_hnd;
 	int ret;
 	uint64_t dma_base;
 	bool triggered;
+	u32 saved_trig = 0;
+	bool restore_trig = false;
 
 	ret = cfg_hnd->ops->dma_base_get(msm_host, &dma_base);
 	if (ret) {
@@ -1456,11 +1623,53 @@ static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len)
 
 	reinit_completion(&msm_host->dma_comp);
 
-	dsi_wait4video_eng_busy(msm_host);
+	/*
+	 * BLOCK_DMA_WITHIN_FRAME (TRIG_CTRL BIT12) makes the controller hold
+	 * the DMA until the MDP goes idle.  That is not the VFP boundary, and
+	 * combined with the 0x100 line schedule the two gates fight for the
+	 * trigger point, so the page-0x2A write still lands mid-scan.  The
+	 * vendor driver never sets this bit; clear it for the duration of a
+	 * scheduled transfer and restore it afterwards.
+	 */
+	if (msm_host->dma_sched_line) {
+		saved_trig = dsi_read(msm_host, REG_DSI_TRIG_CTRL);
+		dsi_write(msm_host, REG_DSI_TRIG_CTRL,
+			  saved_trig & ~DSI_TRIG_CTRL_BLOCK_DMA_WITHIN_FRAME);
+		wmb();
+		restore_trig = true;
+	}
 
-	triggered = msm_dsi_manager_cmd_xfer_trigger(
+	/*
+	 * The DMA schedule register (0x100) is armed by cmd_xfer_commit(),
+	 * which every trigger path goes through, so there is exactly one write
+	 * per controller.  Here we only decide whether the software wait is
+	 * needed: a scheduled release already lands in the VFP, so waiting for
+	 * a video-done boundary on top of it is pointless.
+	 */
+	if (!msm_host->dma_sched_line && !msm_host->skip_video_wait &&
+	    !msm_host->defer_fire)
+		dsi_wait4video_eng_busy(msm_host);
+
+	if (own_trigger) {
+		/*
+		 * Each link of a bonded pair has its own command buffer, so the
+		 * batch path triggers the controllers itself instead of letting
+		 * msm_dsi_manager_cmd_xfer_trigger() push the master's dma_base
+		 * into the slave (which would make the slave read the wrong
+		 * buffer).
+		 */
+		dev_dbg(&msm_host->pdev->dev, "diag: dma_tx id=%d base=0x%llx len=%d sched=%u trig_before=0x%08x\n",
+			 msm_host->id, (unsigned long long)dma_base, len,
+			 msm_host->dma_sched_line,
+			 dsi_read(msm_host, REG_DSI_TRIG_CTRL));
+		msm_dsi_host_cmd_xfer_commit(&msm_host->base, dma_base, len);
+		triggered = !msm_host->defer_fire;
+	} else {
+		triggered = msm_dsi_manager_cmd_xfer_trigger(
 						msm_host->id, dma_base, len);
+	}
 	if (triggered) {
+		dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_VIDEO_DONE, 0);
 		ret = wait_for_completion_timeout(&msm_host->dma_comp,
 					msecs_to_jiffies(200));
 		DBG("ret=%d", ret);
@@ -1470,6 +1679,11 @@ static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len)
 			ret = len;
 	} else {
 		ret = len;
+	}
+
+	if (restore_trig) {
+		dsi_write(msm_host, REG_DSI_TRIG_CTRL, saved_trig);
+		wmb();
 	}
 
 	return ret;
@@ -1531,7 +1745,7 @@ static int dsi_cmds2buf_tx(struct msm_dsi_host *msm_host,
 	int bllp_len = msm_host->mode->hdisplay *
 			mipi_dsi_pixel_format_to_bpp(msm_host->format) / 8;
 
-	len = dsi_cmd_dma_add(msm_host, msg);
+	len = dsi_cmd_dma_add(msm_host, msg, 0, true);
 	if (len < 0) {
 		pr_err("%s: failed to add cmd type = 0x%x\n",
 			__func__,  msg->type);
@@ -1554,7 +1768,7 @@ static int dsi_cmds2buf_tx(struct msm_dsi_host *msm_host,
 		return -EINVAL;
 	}
 
-	ret = dsi_cmd_dma_tx(msm_host, len);
+	ret = dsi_cmd_dma_tx(msm_host, len, false);
 	if (ret < 0) {
 		pr_err("%s: cmd dma tx failed, type=0x%x, data0=0x%x, len=%d, ret=%d\n",
 			__func__, msg->type, (*(u8 *)(msg->tx_buf)), len, ret);
@@ -1566,6 +1780,220 @@ static int dsi_cmds2buf_tx(struct msm_dsi_host *msm_host,
 	}
 
 	return len;
+}
+
+/*
+ * msm_dsi_host_send_cmd_batch() - send several DCS commands with one trigger
+ * @host:  DSI host
+ * @msgs:  command array
+ * @count: number of commands
+ *
+ * Queues every command into the tx buffer with only the last packet flagged,
+ * so the controller sees one DMA transfer and releases the whole sequence
+ * inside a single BLLP window. This is the vendor's DEFER_TRIGGER behaviour;
+ * triggering each command separately interrupts the video scan once per
+ * command, which is what leaves the panel on a half-switched register page.
+ */
+/*
+ * Vendor equivalent of dsi_panel_tx_cmd_set() on a bonded panel: prepare once,
+ * then push every command as its own DMA transfer, and restore once at the
+ * end.  Vendor's dsi_message_tx() does no prepare/restore per transfer (the
+ * mode switch happens in dsi_display_enable), which is why it can afford to
+ * send the three page commands back to back and still keep them inside the
+ * front porch.  Only the first command waits for the frame boundary; the
+ * following ones are fired immediately, exactly like broadcast_cmd().
+ */
+
+int msm_dsi_host_send_cmd_batch(struct mipi_dsi_host *host,
+				struct mipi_dsi_host *slave_host,
+				const struct mipi_dsi_msg *msgs, int count)
+{
+	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+	u32 offset = 0;
+	int i, len, ret;
+
+	if (!msgs || count <= 0)
+		return -EINVAL;
+
+	if (!msm_host->power_on || !msm_host->mode)
+		return -EINVAL;
+
+	mutex_lock(&msm_host->cmd_mutex);
+
+	struct msm_dsi_host *slave = slave_host ? to_msm_dsi_host(slave_host) : NULL;
+	u32 slave_offset = 0;
+	int sret = 0;
+
+	/*
+	 * Schedule the whole batch for the first line of the vertical front
+	 * porch on *both* controllers.  Each link has its own command buffer
+	 * and its own schedule register; the vendor arms every controller in
+	 * dsi_display_broadcast_cmd() for the same reason.
+	 */
+	/*
+	 * Do NOT arm the per-line schedule (0x100): the controller accepts the
+	 * value but never releases the batch on that line.  The release point
+	 * comes from the caller instead - this entry point is invoked from a
+	 * drm_vblank_work, i.e. right after the vblank interrupt, so the
+	 * video-done wait inside dsi_cmd_dma_tx() must be skipped or it burns
+	 * its 70ms timeout and lands anywhere.
+	 */
+	/*
+	 * Do NOT arm DSI_DMA_SCHEDULE_CTRL(0x100) here.  The vendor relies on it
+	 * exclusively, but on this controller it is write-only in practice:
+	 * measured 0x100 = BIT(28)|line stays set and is never consumed, so the
+	 * DMA never gets released and every batch ends in -ETIMEDOUT.  The frame
+	 * boundary is provided by the VIDEO_DONE interrupt instead.
+	 */
+	msm_host->dma_sched_line = 0;
+	if (slave)
+		slave->dma_sched_line = 0;
+
+	msm_host->skip_video_wait = false;
+	if (slave)
+		slave->skip_video_wait = false;
+
+	/*
+	 * Go through the same prepare step as a single transfer: it brings up
+	 * the link clock and MDSS power. Skipping it leaves the DMA engine
+	 * unable to complete and every batch ends in -ETIMEDOUT.
+	 */
+	ret = msm_dsi_host_xfer_prepare(host, &msgs[0]);
+	if (ret) {
+		msm_host->dma_sched_line = 0;
+		mutex_unlock(&msm_host->cmd_mutex);
+		return ret;
+	}
+
+	if (slave_host) {
+		ret = msm_dsi_host_xfer_prepare(slave_host, &msgs[0]);
+		if (ret) {
+			msm_dsi_host_xfer_restore(host, &msgs[0]);
+			msm_host->dma_sched_line = 0;
+			to_msm_dsi_host(slave_host)->dma_sched_line = 0;
+			mutex_unlock(&msm_host->cmd_mutex);
+			return ret;
+		}
+	}
+
+	for (i = 0; i < count; i++) {
+		len = dsi_cmd_dma_add(msm_host, &msgs[i], offset,
+				      i == count - 1);
+		if (len < 0) {
+			msm_dsi_host_xfer_restore(host, &msgs[0]);
+			mutex_unlock(&msm_host->cmd_mutex);
+			return len;
+		}
+		offset += len;
+	}
+
+	/*
+	 * Build the same three commands into the slave's own tx buffer as
+	 * well.  The slave controller reads its own IOVA, so reusing the
+	 * master's dma_base sends it an empty buffer - that is what turned the
+	 * screen fully white when only the schedule was mirrored.
+	 */
+	if (slave) {
+		for (i = 0; i < count; i++) {
+			struct mipi_dsi_msg smsg = msgs[i];
+
+			/*
+			 * The virtual channel is baked into the packet header,
+			 * and the slave owns its own channel.  Reusing the
+			 * master's message verbatim sent the slave's batch to
+			 * the master's channel, where it was dropped - that is
+			 * what left one half of the panel unscanned (half-white)
+			 * and the touch half unconfigured.
+			 */
+			smsg.channel = slave->channel;
+			len = dsi_cmd_dma_add(slave, &smsg, slave_offset,
+					      i == count - 1);
+			if (len < 0) {
+				ret = len;
+				goto out_restore;
+			}
+			slave_offset += len;
+		}
+	}
+
+	/*
+	 * Trigger the master first: both links have to fire inside the same
+	 * VFP, and whichever one goes second loses ~10-20us to the mutex and
+	 * register programming in between.  Measured with the slave first, the
+	 * master half was the one that missed the window (left half garbled).
+	 */
+	/*
+	 * Arm both controllers, wait for a single video-done boundary, then
+	 * trigger them back to back.  Waiting per link (the previous shape)
+	 * put the two halves in different frames: one landed in VFP, the other
+	 * one frame later, which showed up as one half white and one half
+	 * garbled.
+	 */
+	msm_host->defer_fire = true;
+	if (slave)
+		slave->defer_fire = true;
+
+	ret = dsi_cmd_dma_tx(msm_host, offset, true);
+	if (slave)
+		sret = dsi_cmd_dma_tx(slave, slave_offset, true);
+
+	msm_host->defer_fire = false;
+	if (slave)
+		slave->defer_fire = false;
+
+	if (ret >= 0) {
+		/*
+		 * Release the DMA inside the vertical front porch, using the
+		 * DPU's real-time scan line - the same primitive
+		 * sde_encoder_vid_wait_for_active() uses on the vendor side.
+		 * Polling the hardware removes the interrupt-to-write jitter
+		 * that used to push the page switch into the active scan and
+		 * trip the touch firmware watchdog.
+		 */
+		if (msm_dpu_dfps_line_count && msm_host->mode) {
+			int line, guard = 4000;
+
+			while (guard--) {
+				line = msm_dpu_dfps_line_count();
+				if (line < 0)
+					break;
+				if (line >= msm_host->mode->vdisplay)
+					break;
+				udelay(10);
+			}
+		}
+
+		dsi_write(msm_host, REG_DSI_TRIG_DMA, 1);
+		if (slave)
+			dsi_write(slave, REG_DSI_TRIG_DMA, 1);
+		wmb();
+
+		ret = wait_for_completion_timeout(&msm_host->dma_comp,
+						  msecs_to_jiffies(200));
+		if (ret == 0)
+			ret = -ETIMEDOUT;
+		else
+			ret = offset;
+	}
+	
+
+out_restore:
+	msm_host->dma_sched_line = 0;
+	msm_host->skip_video_wait = false;
+	if (slave) {
+		slave->dma_sched_line = 0;
+		slave->skip_video_wait = false;
+	}
+
+	msm_dsi_host_xfer_restore(host, &msgs[0]);
+	if (slave)
+		msm_dsi_host_xfer_restore(slave_host, &msgs[0]);
+
+	mutex_unlock(&msm_host->cmd_mutex);
+
+	if (ret < 0)
+		return ret;
+	return sret < 0 ? sret : 0;
 }
 
 static void dsi_err_worker(struct work_struct *work)
@@ -1702,8 +2130,19 @@ static irqreturn_t dsi_host_irq(int irq, void *ptr)
 	if (isr & DSI_IRQ_ERROR)
 		dsi_error(msm_host);
 
-	if (isr & DSI_IRQ_VIDEO_DONE)
+	if (isr & DSI_IRQ_VIDEO_DONE) {
+		if (msm_host->pending_fire) {
+			struct msm_dsi_host *ps = msm_host->pending_slave;
+
+			msm_host->pending_fire = false;
+			msm_host->pending_slave = NULL;
+			dsi_write(msm_host, REG_DSI_TRIG_DMA, 1);
+			if (ps)
+				dsi_write(ps, REG_DSI_TRIG_DMA, 1);
+			wmb();
+		}
 		complete(&msm_host->video_comp);
+	}
 
 	if (isr & DSI_IRQ_CMD_DMA_DONE)
 		complete(&msm_host->dma_comp);
@@ -1783,7 +2222,14 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host,
 		return -EINVAL;
 
 	mutex_lock(&msm_host->cmd_mutex);
+	/*
+	 * Callers that pass MSM_DSI_MSG_SKIP_VIDEO_WAIT are sending commands
+	 * across a timing change; the video-done wait would time out there.
+	 */
+	msm_host->skip_video_wait =
+		!!(msg->flags & MSM_DSI_MSG_SKIP_VIDEO_WAIT);
 	ret = msm_dsi_manager_cmd_xfer(msm_host->id, msg);
+	msm_host->skip_video_wait = false;
 	mutex_unlock(&msm_host->cmd_mutex);
 
 	return ret;
@@ -2186,8 +2632,14 @@ int msm_dsi_host_xfer_prepare(struct mipi_dsi_host *host,
 
 	/* TODO: vote for bus bandwidth */
 
-	if (!(msg->flags & MIPI_DSI_MSG_USE_LPM))
-		dsi_set_tx_power_mode(0, msm_host);
+	/*
+	 * Set the TX mode explicitly for both cases: the reset default of
+	 * REG_DSI_CMD_DMA_CTRL is HS, so a command that asks for LP but leaves
+	 * the register alone still goes out in HS mode and lands on the panel's
+	 * display side instead of the touch half.
+	 */
+	dsi_set_tx_power_mode((msg->flags & MIPI_DSI_MSG_USE_LPM) ? 1 : 0,
+			      msm_host);
 
 	msm_host->dma_cmd_ctrl_restore = dsi_read(msm_host, REG_DSI_CTRL);
 	dsi_write(msm_host, REG_DSI_CTRL,
@@ -2368,12 +2820,31 @@ void msm_dsi_host_cmd_xfer_commit(struct mipi_dsi_host *host, u32 dma_base,
 {
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
 
+	/*
+	 * Both controllers of a bonded pair are triggered from here, so the
+	 * schedule has to be armed on each one individually - the register is
+	 * per controller.
+	 */
+	if (msm_host->dma_sched_line) {
+		dsi_write(msm_host, REG_DSI_DMA_SCHEDULE_CTRL,
+			  BIT(28) | (msm_host->dma_sched_line & 0xffff));
+		wmb();
+	}
+
 	dsi_write(msm_host, REG_DSI_DMA_BASE, dma_base);
 	dsi_write(msm_host, REG_DSI_DMA_LEN, len);
-	dsi_write(msm_host, REG_DSI_TRIG_DMA, 1);
+	if (!msm_host->defer_fire) {
+		dsi_write(msm_host, REG_DSI_TRIG_DMA, 1);
+		/* Make sure trigger happens */
+		wmb();
+	}
 
-	/* Make sure trigger happens */
-	wmb();
+	if (msm_host->dma_sched_line)
+		dev_dbg(&msm_host->pdev->dev, "diag: trig_done id=%d sched_after=0x%08x trig_ctrl=0x%08x status0=0x%08x\n",
+			 msm_host->id,
+			 dsi_read(msm_host, REG_DSI_DMA_SCHEDULE_CTRL),
+			 dsi_read(msm_host, REG_DSI_TRIG_CTRL),
+			 dsi_read(msm_host, REG_DSI_STATUS0));
 }
 
 void msm_dsi_host_set_phy_mode(struct mipi_dsi_host *host,
@@ -2469,6 +2940,183 @@ int msm_dsi_host_disable(struct mipi_dsi_host *host)
 	 * Reset to disable video engine so that we can send off cmd.
 	 */
 	dsi_sw_reset(msm_host);
+
+	return 0;
+}
+
+/*
+ * DSI Timing DB: a shadow copy of the video timing registers. Writing 1 to
+ * TIMING_DB_MODE latches the following ACTIVE_* / TOTAL writes into that
+ * shadow set, writing 0 commits them at the next vsync. The vendor display
+ * stack uses it for seamless dynamic fps; mainline only had the timing
+ * registers themselves, so a timing change mid-stream used to be applied
+ * immediately and produced a torn frame.
+ */
+#define REG_DSI_TIMING_DB_MODE		0x1E8
+
+/**
+ * msm_dsi_host_dfps_update() - change the panel refresh rate in place
+ * @host:          DSI host
+ * @new_fps:       requested refresh rate
+ * @is_bonded_dsi: whether both DSI links drive the same panel
+ *
+ * Keeps the pixel clock and every horizontal porch untouched and moves the
+ * delta into VFP, exactly like the vendor dfps "vfp porch" method, so the
+ * DSI link rate does not change and only the frame duration does.
+ *
+ * Return: 0 on success, negative errno otherwise.
+ */
+void msm_dsi_host_wait_vfp(struct mipi_dsi_host *host)
+{
+	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+	int line, guard = 4000;
+
+	if (!msm_host || !msm_host->mode)
+		return;
+
+	while (guard--) {
+		line = msm_dpu_dfps_line_count();
+		if (line < 0 || line >= msm_host->mode->vdisplay)
+			return;
+		udelay(10);
+	}
+}
+
+void msm_dsi_host_dfps_latch(struct mipi_dsi_host *host)
+{
+	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+
+	if (!msm_host)
+		return;
+
+	dsi_write(msm_host, REG_DSI_TIMING_DB_MODE, 0);
+	wmb();
+}
+
+int msm_dsi_host_dfps_update(struct mipi_dsi_host *host, u32 new_fps,
+			     bool is_bonded_dsi, bool commit)
+{
+	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+	struct drm_display_mode *mode = msm_host->mode;
+	u32 base_fps, base_vtotal, new_vtotal;
+
+	if (!mode || !msm_host->power_on)
+		return -ENODEV;
+
+	/*
+	 * The DRM core re-duplicates the mode into msm_host->mode on every
+	 * atomic check, so the mode itself cannot hold dfps state. Keep a
+	 * private baseline (taken from the first request) and always compute
+	 * from it; that also stops repeated 120 -> 60 -> 90 round trips from
+	 * accumulating rounding drift.
+	 */
+	if (!msm_host->dfps_base_fps) {
+		/*
+		 * The baseline is always the panel's 120 Hz mode, not whatever
+		 * mode happens to be active: when the compositor picks the
+		 * 60 Hz sibling mode directly, msm_host->mode already carries
+		 * vtotal 5516 and deriving the baseline from it would double
+		 * the stretch on the next request.
+		 */
+		msm_host->dfps_base_fps = 120;
+		msm_host->dfps_base_vtotal = 2758;
+		msm_host->dfps_base_vsync_start = 2586;
+		msm_host->dfps_base_vsync_end = 2590;
+		msm_host->dfps_base_vtotal = 2758;
+		msm_host->dfps_cur_fps = drm_mode_vrefresh(mode);
+	}
+
+	base_fps = msm_host->dfps_base_fps;
+	base_vtotal = msm_host->dfps_base_vtotal;
+
+	if (!new_fps || new_fps == msm_host->dfps_cur_fps)
+		return 0;
+
+	new_vtotal = DIV_ROUND_CLOSEST_ULL((u64)base_vtotal * base_fps, new_fps);
+
+	/* the active area has to stay inside the frame */
+	if (new_vtotal <= msm_host->dfps_base_vsync_end)
+		return -EINVAL;
+
+	mutex_lock(&msm_host->dev_mutex);
+
+	/*
+	 * Vendor order: DSI writes the new timing into the shadow registers
+	 * (DB_MODE=1), the DPU interface is kicked over to the new timing, and
+	 * only then does DSI commit (DB_MODE=0) - so the panel never sees a
+	 * frame where the controller and the interface disagree.  Doing it the
+	 * other way round (DSI immediate, DPU afterwards) is what still showed
+	 * a very short duplicated frame on 60 -> 120.
+	 */
+	dsi_write(msm_host, REG_DSI_TIMING_DB_MODE, 1);
+	wmb();
+
+	/*
+	 * Publish the new rate *before* dsi_timing_setup(): that function
+	 * re-derives the dfps vtotal from dfps_cur_fps, so leaving the old
+	 * value in place while going 60 -> 120 recomputes 5516 and programs
+	 * the 60 Hz timing under a 120 Hz mode - the panel then repeats part
+	 * of the image ("stuck on a duplicated screen").  With cur_fps already
+	 * at the new value the branch either applies the right offset (going
+	 * down) or stays out of the way (going back to the base rate).
+	 */
+	msm_host->dfps_cur_fps = new_fps;
+
+	mode->vtotal = new_vtotal;
+	/* vsync stays put, so the whole delta lands in VFP (not VBP) */
+	mode->vsync_start = msm_host->dfps_base_vsync_start;
+	mode->vsync_end = msm_host->dfps_base_vsync_end;
+
+	dsi_timing_setup(msm_host, is_bonded_dsi);
+
+	/*
+	 * Vendor flushes the shadow timing immediately after programming it
+	 * (dsi_ctrl_hw_cmn.c: "DSI_W32(ctrl, DSI_DSI_TIMING_FLUSH, 0x1)").
+	 * mainline never wrote this register, so the new VFP could sit in the
+	 * shadow cell past the frame boundary - one more frame at the old
+	 * rate, i.e. the short duplicated image on 60 -> 120.
+	 */
+	dsi_write(msm_host, 0x1E4, 0x1);
+
+	wmb();
+
+	/*
+	 * Split the latch: the caller updates the DPU interface between the
+	 * two halves so both sides take effect on the same frame.  Doing the
+	 * whole DSI side (including this ~2ms latch wait) before touching the
+	 * DPU leaves a window where DSI already scans at the new rate while
+	 * the INTF still emits the old one - visible as a jolt on 120->60 and
+	 * a duplicated frame on 60->120.
+	 */
+	if (commit) {
+		/* DPU has already been moved; latch the DSI timing now */
+		dsi_write(msm_host, REG_DSI_TIMING_DB_MODE, 0);
+		wmb();
+	}
+
+	mutex_unlock(&msm_host->dev_mutex);
+
+	pr_info("dsi%d: dfps %u -> %u Hz (vtotal %u -> %u)\n",
+		msm_host->id, base_fps, new_fps, base_vtotal, new_vtotal);
+
+	return 0;
+}
+
+/**
+ * msm_dsi_host_dfps_get_fps() - current dfps refresh rate
+ * @host: DSI host
+ *
+ * Returns the refresh rate the controller is currently programmed for, or the
+ * mode's own rate when dfps has never been used.
+ */
+u32 msm_dsi_host_dfps_get_fps(struct mipi_dsi_host *host)
+{
+	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+
+	if (msm_host->dfps_cur_fps)
+		return msm_host->dfps_cur_fps;
+	if (msm_host->mode)
+		return drm_mode_vrefresh(msm_host->mode);
 
 	return 0;
 }
@@ -2597,6 +3245,18 @@ int msm_dsi_host_set_display_mode(struct mipi_dsi_host *host,
 		pr_err("%s: cannot duplicate mode\n", __func__);
 		return -ENOMEM;
 	}
+
+	/*
+	 * Deliberately do NOT re-sync dfps_cur_fps from the new mode here.
+	 * The DRM core re-duplicates the mode on every atomic check, and the
+	 * mode it hands back carries the panel's base rate (120 Hz) even while
+	 * dfps has the hardware running at 60 Hz.  Copying vrefresh into
+	 * dfps_cur_fps would therefore silently reset the dfps state, and the
+	 * next `echo 120` would be treated as a no-op (measured on hardware:
+	 * the 60 -> 120 request never reached msm_dsi_host_dfps_update).
+	 * dsi_timing_setup() re-applies the dfps offset from dfps_cur_fps, so
+	 * the mode copy does not need to carry it.
+	 */
 
 	return 0;
 }

@@ -50,7 +50,6 @@ static const struct camss_subdev_resources csiphy_res_8x16[] = {
 		.reg = { "csiphy0", "csiphy0_clk_mux" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_2ph_1_0,
 			.formats = &csiphy_formats_8x16
 		}
@@ -67,7 +66,6 @@ static const struct camss_subdev_resources csiphy_res_8x16[] = {
 		.reg = { "csiphy1", "csiphy1_clk_mux" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_2ph_1_0,
 			.formats = &csiphy_formats_8x16
 		}
@@ -77,9 +75,7 @@ static const struct camss_subdev_resources csiphy_res_8x16[] = {
 static const struct camss_subdev_resources csid_res_8x16[] = {
 	/* CSID0 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 40000 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi0_ahb", "ahb",
 			   "csi0", "csi0_phy", "csi0_pix", "csi0_rdi" },
 		.clock_rate = { { 0 },
@@ -101,9 +97,7 @@ static const struct camss_subdev_resources csid_res_8x16[] = {
 
 	/* CSID1 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 40000 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi1_ahb", "ahb",
 			   "csi1", "csi1_phy", "csi1_pix", "csi1_rdi" },
 		.clock_rate = { { 0 },
@@ -162,159 +156,10 @@ static const struct camss_subdev_resources vfe_res_8x16[] = {
 	}
 };
 
-static const struct camss_subdev_resources csiphy_res_8x39[] = {
-	/* CSIPHY0 */
-	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 40000 }
-		},
-		.clock = { "top_ahb", "ispif_ahb", "ahb", "csiphy0_timer" },
-		.clock_rate = { { 0 },
-				{ 40000000, 80000000 },
-				{ 0 },
-				{ 100000000, 200000000 } },
-		.reg = { "csiphy0", "csiphy0_clk_mux" },
-		.interrupt = { "csiphy0" },
-		.csiphy = {
-			.id = 0,
-			.hw_ops = &csiphy_ops_2ph_1_0,
-			.formats = &csiphy_formats_8x16
-		}
-	},
-
-	/* CSIPHY1 */
-	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 40000 }
-		},
-		.clock = { "top_ahb", "ispif_ahb", "ahb", "csiphy1_timer" },
-		.clock_rate = { { 0 },
-				{ 40000000, 80000000 },
-				{ 0 },
-				{ 100000000, 200000000 } },
-		.reg = { "csiphy1", "csiphy1_clk_mux" },
-		.interrupt = { "csiphy1" },
-		.csiphy = {
-			.id = 1,
-			.hw_ops = &csiphy_ops_2ph_1_0,
-			.formats = &csiphy_formats_8x16
-		}
-	}
-};
-
-static const struct camss_subdev_resources csid_res_8x39[] = {
-	/* CSID0 */
-	{
-		.regulators = {},
-		.clock = { "top_ahb", "ispif_ahb", "csi0_ahb", "ahb",
-			   "csi0", "csi0_phy", "csi0_pix", "csi0_rdi" },
-		.clock_rate = { { 0 },
-				{ 40000000, 80000000 },
-				{ 0 },
-				{ 0 },
-				{ 100000000, 200000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
-		.reg = { "csid0" },
-		.interrupt = { "csid0" },
-		.csid = {
-			.hw_ops = &csid_ops_4_1,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_4_1
-		}
-	},
-
-	/* CSID1 */
-	{
-		.regulators = {},
-		.clock = { "top_ahb", "ispif_ahb", "csi1_ahb", "ahb",
-			   "csi1", "csi1_phy", "csi1_pix", "csi1_rdi" },
-		.clock_rate = { { 0 },
-				{ 40000000, 80000000 },
-				{ 0 },
-				{ 0 },
-				{ 100000000, 200000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
-		.reg = { "csid1" },
-		.interrupt = { "csid1" },
-		.csid = {
-			.hw_ops = &csid_ops_4_1,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_4_1
-		}
-	},
-
-	/* CSID2 */
-	{
-		.regulators = {},
-		.clock = { "top_ahb", "ispif_ahb", "csi2_ahb", "ahb",
-			   "csi2", "csi2_phy", "csi2_pix", "csi2_rdi" },
-		.clock_rate = { { 0 },
-				{ 40000000, 80000000 },
-				{ 0 },
-				{ 0 },
-				{ 100000000, 200000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
-		.reg = { "csid2" },
-		.interrupt = { "csid2" },
-		.csid = {
-			.hw_ops = &csid_ops_4_1,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_4_1
-		}
-	},
-};
-
-static const struct camss_subdev_resources ispif_res_8x39 = {
-	/* ISPIF */
-	.clock = { "top_ahb", "ispif_ahb", "ahb",
-		   "csi0", "csi0_pix", "csi0_rdi",
-		   "csi1", "csi1_pix", "csi1_rdi",
-		   "csi2", "csi2_pix", "csi2_rdi" },
-	.clock_for_reset = { "vfe0", "csi_vfe0" },
-	.reg = { "ispif", "csi_clk_mux" },
-	.interrupt = { "ispif" },
-};
-
-static const struct camss_subdev_resources vfe_res_8x39[] = {
-	/* VFE0 */
-	{
-		.regulators = {},
-		.clock = { "top_ahb", "ispif_ahb", "vfe0", "csi_vfe0",
-			   "vfe_ahb", "vfe_axi", "ahb" },
-		.clock_rate = { { 0 },
-				{ 40000000, 80000000 },
-				{ 50000000, 80000000, 100000000, 160000000,
-				  177780000, 200000000, 266670000, 320000000,
-				  400000000, 465000000, 480000000, 600000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
-		.reg = { "vfe0" },
-		.interrupt = { "vfe0" },
-		.vfe = {
-			.line_num = 3,
-			.has_vbif = true,
-			.vbif_name = "vfe0_vbif",
-			.hw_ops = &vfe_ops_4_1,
-			.formats_rdi = &vfe_formats_rdi_8x16,
-			.formats_pix = &vfe_formats_pix_8x16
-		}
-	}
-};
-
 static const struct camss_subdev_resources csid_res_8x53[] = {
 	/* CSID0 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 9900 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi0_ahb", "ahb",
 			   "csi0", "csi0_phy", "csi0_pix", "csi0_rdi" },
 		.clock_rate = { { 0 },
@@ -337,9 +182,7 @@ static const struct camss_subdev_resources csid_res_8x53[] = {
 
 	/* CSID1 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 9900 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi1_ahb", "ahb",
 			   "csi1", "csi1_phy", "csi1_pix", "csi1_rdi" },
 		.clock_rate = { { 0 },
@@ -362,9 +205,7 @@ static const struct camss_subdev_resources csid_res_8x53[] = {
 
 	/* CSID2 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 9900 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi2_ahb", "ahb",
 			   "csi2", "csi2_phy", "csi2_pix", "csi2_rdi" },
 		.clock_rate = { { 0 },
@@ -481,7 +322,6 @@ static const struct camss_subdev_resources csiphy_res_8x96[] = {
 		.reg = { "csiphy0", "csiphy0_clk_mux" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_8x96
 		}
@@ -498,7 +338,6 @@ static const struct camss_subdev_resources csiphy_res_8x96[] = {
 		.reg = { "csiphy1", "csiphy1_clk_mux" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_8x96
 		}
@@ -515,7 +354,6 @@ static const struct camss_subdev_resources csiphy_res_8x96[] = {
 		.reg = { "csiphy2", "csiphy2_clk_mux" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_8x96
 		}
@@ -525,9 +363,7 @@ static const struct camss_subdev_resources csiphy_res_8x96[] = {
 static const struct camss_subdev_resources csid_res_8x96[] = {
 	/* CSID0 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 80160 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi0_ahb", "ahb",
 			   "csi0", "csi0_phy", "csi0_pix", "csi0_rdi" },
 		.clock_rate = { { 0 },
@@ -549,9 +385,7 @@ static const struct camss_subdev_resources csid_res_8x96[] = {
 
 	/* CSID1 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 80160 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi1_ahb", "ahb",
 			   "csi1", "csi1_phy", "csi1_pix", "csi1_rdi" },
 		.clock_rate = { { 0 },
@@ -573,9 +407,7 @@ static const struct camss_subdev_resources csid_res_8x96[] = {
 
 	/* CSID2 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 80160 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi2_ahb", "ahb",
 			   "csi2", "csi2_phy", "csi2_pix", "csi2_rdi" },
 		.clock_rate = { { 0 },
@@ -597,9 +429,7 @@ static const struct camss_subdev_resources csid_res_8x96[] = {
 
 	/* CSID3 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 80160 }
-		},
+		.regulators = { "vdda" },
 		.clock = { "top_ahb", "ispif_ahb", "csi3_ahb", "ahb",
 			   "csi3", "csi3_phy", "csi3_pix", "csi3_rdi" },
 		.clock_rate = { { 0 },
@@ -824,7 +654,6 @@ static const struct camss_subdev_resources csiphy_res_660[] = {
 		.reg = { "csiphy0", "csiphy0_clk_mux" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_8x96
 		}
@@ -843,7 +672,6 @@ static const struct camss_subdev_resources csiphy_res_660[] = {
 		.reg = { "csiphy1", "csiphy1_clk_mux" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_8x96
 		}
@@ -862,7 +690,6 @@ static const struct camss_subdev_resources csiphy_res_660[] = {
 		.reg = { "csiphy2", "csiphy2_clk_mux" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_8x96
 		}
@@ -872,10 +699,7 @@ static const struct camss_subdev_resources csiphy_res_660[] = {
 static const struct camss_subdev_resources csid_res_660[] = {
 	/* CSID0 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 0 },
-			{ .supply = "vdd_sec", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda", "vdd_sec" },
 		.clock = { "top_ahb", "ispif_ahb", "csi0_ahb", "ahb",
 			   "csi0", "csi0_phy", "csi0_pix", "csi0_rdi",
 			   "cphy_csid0" },
@@ -900,10 +724,7 @@ static const struct camss_subdev_resources csid_res_660[] = {
 
 	/* CSID1 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 0 },
-			{ .supply = "vdd_sec", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda", "vdd_sec" },
 		.clock = { "top_ahb", "ispif_ahb", "csi1_ahb", "ahb",
 			   "csi1", "csi1_phy", "csi1_pix", "csi1_rdi",
 			   "cphy_csid1" },
@@ -928,10 +749,7 @@ static const struct camss_subdev_resources csid_res_660[] = {
 
 	/* CSID2 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 0 },
-			{ .supply = "vdd_sec", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda", "vdd_sec" },
 		.clock = { "top_ahb", "ispif_ahb", "csi2_ahb", "ahb",
 			   "csi2", "csi2_phy", "csi2_pix", "csi2_rdi",
 			   "cphy_csid2" },
@@ -956,10 +774,7 @@ static const struct camss_subdev_resources csid_res_660[] = {
 
 	/* CSID3 */
 	{
-		.regulators = {
-			{ .supply = "vdda", .init_load_uA = 0 },
-			{ .supply = "vdd_sec", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda", "vdd_sec" },
 		.clock = { "top_ahb", "ispif_ahb", "csi3_ahb", "ahb",
 			   "csi3", "csi3_phy", "csi3_pix", "csi3_rdi",
 			   "cphy_csid3" },
@@ -1053,197 +868,6 @@ static const struct camss_subdev_resources vfe_res_660[] = {
 	}
 };
 
-static const struct camss_subdev_resources csiphy_res_670[] = {
-	/* CSIPHY0 */
-	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 42800 },
-			{ .supply = "vdda-pll", .init_load_uA = 13900 }
-		},
-		.clock = { "soc_ahb", "cpas_ahb",
-			   "csiphy0", "csiphy0_timer" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 0 },
-				{ 19200000, 240000000, 269333333 } },
-		.reg = { "csiphy0" },
-		.interrupt = { "csiphy0" },
-		.csiphy = {
-			.id = 0,
-			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845
-		}
-	},
-
-	/* CSIPHY1 */
-	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 42800 },
-			{ .supply = "vdda-pll", .init_load_uA = 13900 }
-		},
-		.clock = { "soc_ahb", "cpas_ahb",
-			   "csiphy1", "csiphy1_timer" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 0 },
-				{ 19200000, 240000000, 269333333 } },
-		.reg = { "csiphy1" },
-		.interrupt = { "csiphy1" },
-		.csiphy = {
-			.id = 1,
-			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845
-		}
-	},
-
-	/* CSIPHY2 */
-	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 42800 },
-			{ .supply = "vdda-pll", .init_load_uA = 13900 }
-		},
-		.clock = { "soc_ahb", "cpas_ahb",
-			   "csiphy2", "csiphy2_timer" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 0 },
-				{ 19200000, 240000000, 269333333 } },
-		.reg = { "csiphy2" },
-		.interrupt = { "csiphy2" },
-		.csiphy = {
-			.id = 2,
-			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845
-		}
-	}
-};
-
-static const struct camss_subdev_resources csid_res_670[] = {
-	/* CSID0 */
-	{
-		.regulators = {},
-		.clock = { "cpas_ahb", "soc_ahb", "vfe0",
-			   "vfe0_cphy_rx", "csi0" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 100000000, 320000000, 404000000, 480000000, 600000000 },
-				{ 384000000 },
-				{ 19200000, 75000000, 384000000, 538666667 } },
-		.reg = { "csid0" },
-		.interrupt = { "csid0" },
-		.csid = {
-			.hw_ops = &csid_ops_gen2,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_gen2
-		}
-	},
-
-	/* CSID1 */
-	{
-		.regulators = {},
-		.clock = { "cpas_ahb", "soc_ahb", "vfe1",
-			   "vfe1_cphy_rx", "csi1" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 100000000, 320000000, 404000000, 480000000, 600000000 },
-				{ 384000000 },
-				{ 19200000, 75000000, 384000000, 538666667 } },
-		.reg = { "csid1" },
-		.interrupt = { "csid1" },
-		.csid = {
-			.hw_ops = &csid_ops_gen2,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_gen2
-		}
-	},
-
-	/* CSID2 */
-	{
-		.regulators = {},
-		.clock = { "cpas_ahb", "soc_ahb", "vfe_lite",
-			   "vfe_lite_cphy_rx", "csi2" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 100000000, 320000000, 404000000, 480000000, 600000000 },
-				{ 384000000 },
-				{ 19200000, 75000000, 384000000, 538666667 } },
-		.reg = { "csid2" },
-		.interrupt = { "csid2" },
-		.csid = {
-			.is_lite = true,
-			.hw_ops = &csid_ops_gen2,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_gen2
-		}
-	}
-};
-
-static const struct camss_subdev_resources vfe_res_670[] = {
-	/* VFE0 */
-	{
-		.regulators = {},
-		.clock = { "camnoc_axi", "cpas_ahb", "soc_ahb",
-			   "vfe0", "vfe0_axi" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 0 },
-				{ 100000000, 320000000, 404000000, 480000000, 600000000 },
-				{ 0 } },
-		.reg = { "vfe0" },
-		.interrupt = { "vfe0" },
-		.vfe = {
-			.line_num = 4,
-			.has_pd = true,
-			.pd_name = "ife0",
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	},
-
-	/* VFE1 */
-	{
-		.regulators = {},
-		.clock = { "camnoc_axi", "cpas_ahb", "soc_ahb",
-			   "vfe1", "vfe1_axi" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 0 },
-				{ 100000000, 320000000, 404000000, 480000000, 600000000 },
-				{ 0 } },
-		.reg = { "vfe1" },
-		.interrupt = { "vfe1" },
-		.vfe = {
-			.line_num = 4,
-			.has_pd = true,
-			.pd_name = "ife1",
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	},
-
-	/* VFE-lite */
-	{
-		.regulators = {},
-		.clock = { "camnoc_axi", "cpas_ahb", "soc_ahb",
-			   "vfe_lite" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 0 },
-				{ 100000000, 320000000, 404000000, 480000000, 600000000 } },
-		.reg = { "vfe_lite" },
-		.interrupt = { "vfe_lite" },
-		.vfe = {
-			.is_lite = true,
-			.line_num = 4,
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	}
-};
-
 static const struct camss_subdev_resources csiphy_res_845[] = {
 	/* CSIPHY0 */
 	{
@@ -1262,7 +886,6 @@ static const struct camss_subdev_resources csiphy_res_845[] = {
 		.reg = { "csiphy0" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -1285,7 +908,6 @@ static const struct camss_subdev_resources csiphy_res_845[] = {
 		.reg = { "csiphy1" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -1308,7 +930,6 @@ static const struct camss_subdev_resources csiphy_res_845[] = {
 		.reg = { "csiphy2" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -1331,7 +952,6 @@ static const struct camss_subdev_resources csiphy_res_845[] = {
 		.reg = { "csiphy3" },
 		.interrupt = { "csiphy3" },
 		.csiphy = {
-			.id = 3,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -1341,10 +961,7 @@ static const struct camss_subdev_resources csiphy_res_845[] = {
 static const struct camss_subdev_resources csid_res_845[] = {
 	/* CSID0 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "cpas_ahb", "cphy_rx_src", "slow_ahb_src",
 				"soc_ahb", "vfe0", "vfe0_src",
 				"vfe0_cphy_rx", "csi0",
@@ -1369,10 +986,7 @@ static const struct camss_subdev_resources csid_res_845[] = {
 
 	/* CSID1 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "cpas_ahb", "cphy_rx_src", "slow_ahb_src",
 				"soc_ahb", "vfe1", "vfe1_src",
 				"vfe1_cphy_rx", "csi1",
@@ -1397,10 +1011,7 @@ static const struct camss_subdev_resources csid_res_845[] = {
 
 	/* CSID2 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "cpas_ahb", "cphy_rx_src", "slow_ahb_src",
 				"soc_ahb", "vfe_lite", "vfe_lite_src",
 				"vfe_lite_cphy_rx", "csi2",
@@ -1446,7 +1057,6 @@ static const struct camss_subdev_resources vfe_res_845[] = {
 		.interrupt = { "vfe0" },
 		.vfe = {
 			.line_num = 4,
-			.pd_name = "ife0",
 			.has_pd = true,
 			.hw_ops = &vfe_ops_170,
 			.formats_rdi = &vfe_formats_rdi_845,
@@ -1474,7 +1084,6 @@ static const struct camss_subdev_resources vfe_res_845[] = {
 		.interrupt = { "vfe1" },
 		.vfe = {
 			.line_num = 4,
-			.pd_name = "ife1",
 			.has_pd = true,
 			.hw_ops = &vfe_ops_170,
 			.formats_rdi = &vfe_formats_rdi_845,
@@ -1509,269 +1118,70 @@ static const struct camss_subdev_resources vfe_res_845[] = {
 	}
 };
 
-static const struct camss_subdev_resources csiphy_res_sm6150[] = {
+static const struct camss_subdev_resources csiphy_res_sm8150[] = {
 	/* CSIPHY0 */
 	{
-		.regulators = {
-			{ .supply = "vdd-csiphy-1p2", .init_load_uA = 35000 },
-			{ .supply = "vdd-csiphy-1p8", .init_load_uA = 5000 }
-		},
+		.regulators = {},
 		.clock = { "csiphy0", "csiphy0_timer" },
-		.clock_rate = { { 269333333, 384000000 },
-				{ 269333333 } },
+		.clock_rate = { { 400000000 },
+				{ 300000000 } },
 		.reg = { "csiphy0" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY1 */
 	{
-		.regulators = {
-			{ .supply = "vdd-csiphy-1p2", .init_load_uA = 35000 },
-			{ .supply = "vdd-csiphy-1p8", .init_load_uA = 5000 }
-		},
+		.regulators = {},
 		.clock = { "csiphy1", "csiphy1_timer" },
-		.clock_rate = { { 269333333, 384000000 },
-				{ 269333333 } },
+		.clock_rate = { { 400000000 },
+				{ 300000000 } },
 		.reg = { "csiphy1" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY2 */
 	{
-		.regulators = {
-			{ .supply = "vdd-csiphy-1p2", .init_load_uA = 35000 },
-			{ .supply = "vdd-csiphy-1p8", .init_load_uA = 5000 }
-		},
+		.regulators = {},
 		.clock = { "csiphy2", "csiphy2_timer" },
-		.clock_rate = { { 269333333, 384000000 },
-				{ 269333333 } },
-		.reg = { "csiphy2" },
-		.interrupt = { "csiphy2" },
-		.csiphy = {
-			.id = 2,
-			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845
-		}
-	},
-};
-
-static const struct camss_subdev_resources csid_res_sm6150[] = {
-	/* CSID0 */
-	{
-		.regulators = {},
-		.clock = { "vfe0_cphy_rx", "vfe0_csid" },
-		.clock_rate = { { 269333333, 384000000 },
-				{ 320000000, 540000000 } },
-		.reg = { "csid0" },
-		.interrupt = { "csid0" },
-		.csid = {
-			.is_lite = false,
-			.hw_ops = &csid_ops_gen2,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_gen2
-		}
-	},
-	/* CSID1 */
-	{
-		.regulators = {},
-		.clock = { "vfe1_cphy_rx", "vfe1_csid" },
-		.clock_rate = { { 269333333, 384000000 },
-				{ 320000000, 540000000 } },
-		.reg = { "csid1" },
-		.interrupt = { "csid1" },
-		.csid = {
-			.is_lite = false,
-			.hw_ops = &csid_ops_gen2,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_gen2
-		}
-	},
-	/* CSID2 */
-	{
-		.regulators = {},
-		.clock = { "vfe_lite_cphy_rx", "vfe_lite_csid" },
-		.clock_rate = { { 269333333, 384000000 },
-				{ 320000000, 540000000 } },
-		.reg = { "csid_lite" },
-		.interrupt = { "csid_lite" },
-		.csid = {
-			.is_lite = true,
-			.hw_ops = &csid_ops_gen2,
-			.parent_dev_ops = &vfe_parent_dev_ops,
-			.formats = &csid_formats_gen2
-		}
-	},
-};
-
-static const struct camss_subdev_resources vfe_res_sm6150[] = {
-	/* VFE0 */
-	{
-		.regulators = {},
-		.clock = { "gcc_axi_hf", "camnoc_axi", "cpas_ahb", "soc_ahb",
-			   "vfe0", "vfe0_axi"},
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 80000000 },
-				{ 37500000, 40000000 },
-				{ 360000000, 432000000, 540000000, 600000000 },
-				{ 265000000, 426000000 } },
-		.reg = { "vfe0" },
-		.interrupt = { "vfe0" },
-		.vfe = {
-			.line_num = 3,
-			.is_lite = false,
-			.has_pd = true,
-			.pd_name = "ife0",
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	},
-	/* VFE1 */
-	{
-		.regulators = {},
-		.clock = { "gcc_axi_hf", "camnoc_axi", "cpas_ahb", "soc_ahb",
-			   "vfe1", "vfe1_axi"},
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 80000000 },
-				{ 37500000, 40000000 },
-				{ 360000000, 432000000, 540000000, 600000000 },
-				{ 265000000, 426000000 } },
-		.reg = { "vfe1" },
-		.interrupt = { "vfe1" },
-		.vfe = {
-			.line_num = 3,
-			.is_lite = false,
-			.has_pd = true,
-			.pd_name = "ife1",
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	},
-	/* VFE2 */
-	{
-		.regulators = {},
-		.clock = { "gcc_axi_hf", "camnoc_axi", "cpas_ahb", "soc_ahb",
-			   "vfe_lite" },
-		.clock_rate = { { 0 },
-				{ 0 },
-				{ 80000000 },
-				{ 37500000, 40000000 },
-				{ 360000000, 432000000, 540000000, 600000000 } },
-		.reg = { "vfe_lite" },
-		.interrupt = { "vfe_lite" },
-		.vfe = {
-			.line_num = 4,
-			.is_lite = true,
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	},
-};
-
-static const struct resources_icc icc_res_sm6150[] = {
-	{
-		.name = "ahb",
-		.icc_bw_tbl.avg = 38400,
-		.icc_bw_tbl.peak = 76800,
-	},
-	{
-		.name = "hf_0",
-		.icc_bw_tbl.avg = 2097152,
-		.icc_bw_tbl.peak = 2097152,
-	},
-};
-
-static const struct camss_subdev_resources csiphy_res_sm6350[] = {
-	/* CSIPHY0 */
-	{
-		.regulators = {
-			{ .supply = "vdd-csiphy0-0p9", .init_load_uA = 80000 },
-			{ .supply = "vdd-csiphy0-1p25", .init_load_uA = 80000 },
-		},
-		.clock = { "csiphy0", "csiphy0_timer" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
-				{ 300000000 } },
-		.reg = { "csiphy0" },
-		.interrupt = { "csiphy0" },
-		.csiphy = {
-			.id = 0,
-			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845
-		}
-	},
-	/* CSIPHY1 */
-	{
-		.regulators = {
-			{ .supply = "vdd-csiphy1-0p9", .init_load_uA = 80000 },
-			{ .supply = "vdd-csiphy1-1p25", .init_load_uA = 80000 },
-		},
-		.clock = { "csiphy1", "csiphy1_timer" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
-				{ 300000000 } },
-		.reg = { "csiphy1" },
-		.interrupt = { "csiphy1" },
-		.csiphy = {
-			.id = 1,
-			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845
-		}
-	},
-	/* CSIPHY2 */
-	{
-		.regulators = {
-			{ .supply = "vdd-csiphy2-0p9", .init_load_uA = 80000 },
-			{ .supply = "vdd-csiphy2-1p25", .init_load_uA = 80000 },
-		},
-		.clock = { "csiphy2", "csiphy2_timer" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
+		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy2" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY3 */
 	{
-		.regulators = {
-			{ .supply = "vdd-csiphy3-0p9", .init_load_uA = 80000 },
-			{ .supply = "vdd-csiphy3-1p25", .init_load_uA = 80000 },
-		},
+		.regulators = {},
 		.clock = { "csiphy3", "csiphy3_timer" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
+		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy3" },
 		.interrupt = { "csiphy3" },
 		.csiphy = {
-			.id = 3,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
-	}
+	},
 };
 
-static const struct camss_subdev_resources csid_res_sm6350[] = {
+static const struct camss_subdev_resources csid_res_sm8150[] = {
 	/* CSID0 */
 	{
-		.regulators = {},
-		.clock = { "vfe0_csid", "vfe0_cphy_rx", "vfe0" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
+		.regulators = { "vdda-phy", "vdda-pll" },
+		.clock = { "vfe0_csid", "vfe0_cphy_rx", "vfe0", "vfe0_axi" },
+		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
-				{ 320000000, 404000000, 480000000, 600000000 } },
+				{ 0 },
+				{ 0 } },
 		.reg = { "csid0" },
 		.interrupt = { "csid0" },
 		.csid = {
@@ -1782,11 +1192,12 @@ static const struct camss_subdev_resources csid_res_sm6350[] = {
 	},
 	/* CSID1 */
 	{
-		.regulators = {},
-		.clock = { "vfe1_csid", "vfe1_cphy_rx", "vfe1" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
+		.regulators = { "vdda-phy", "vdda-pll" },
+		.clock = { "vfe1_csid", "vfe1_cphy_rx", "vfe1", "vfe1_axi" },
+		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
-				{ 320000000, 404000000, 480000000, 600000000 } },
+				{ 0 },
+				{ 0 } },
 		.reg = { "csid1" },
 		.interrupt = { "csid1" },
 		.csid = {
@@ -1795,30 +1206,31 @@ static const struct camss_subdev_resources csid_res_sm6350[] = {
 			.formats = &csid_formats_gen2
 		}
 	},
-	/* CSID2 */
+	/* CSID_LITE0 */
 	{
-		.regulators = {},
-		.clock = { "vfe2_csid", "vfe2_cphy_rx", "vfe2" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
+		.regulators = { "vdda-phy", "vdda-pll" },
+		.clock = { "vfe_lite0_csid", "vfe_lite0_cphy_rx", "vfe_lite0" },
+		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
-				{ 320000000, 404000000, 480000000, 600000000 } },
-		.reg = { "csid2" },
-		.interrupt = { "csid2" },
+				{ 0 }, },
+		.reg = { "csid_lite0" },
+		.interrupt = { "csid_lite0" },
 		.csid = {
+			.is_lite = true,
 			.hw_ops = &csid_ops_gen2,
 			.parent_dev_ops = &vfe_parent_dev_ops,
 			.formats = &csid_formats_gen2
 		}
 	},
-	/* CSID3 (lite) */
+	/* CSID_LITE1 */
 	{
-		.regulators = {},
-		.clock = { "vfe_lite_csid", "vfe_lite_cphy_rx", "vfe_lite" },
-		.clock_rate = { { 300000000, 384000000, 400000000 },
+		.regulators = { "vdda-phy", "vdda-pll" },
+		.clock = { "vfe_lite1_csid", "vfe_lite1_cphy_rx", "vfe_lite1" },
+		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
-				{ 400000000, 480000000 } },
-		.reg = { "csid_lite" },
-		.interrupt = { "csid_lite" },
+				{ 0 }, },
+		.reg = { "csid_lite1" },
+		.interrupt = { "csid_lite1" },
 		.csid = {
 			.is_lite = true,
 			.hw_ops = &csid_ops_gen2,
@@ -1828,22 +1240,22 @@ static const struct camss_subdev_resources csid_res_sm6350[] = {
 	}
 };
 
-static const struct camss_subdev_resources vfe_res_sm6350[] = {
+static const struct camss_subdev_resources vfe_res_sm8150[] = {
 	/* VFE0 */
 	{
 		.regulators = {},
-		.clock = { "cpas_ahb", "camnoc_axi", "vfe0",
-			   "vfe0_axi", "cam_axi", "soc_ahb" },
-		.clock_rate = { { 19200000 },
+		.clock = { "gcc_axi_hf", "gcc_axi_sf", "cpas_ahb", "camnoc_axi", "vfe0", "vfe0_axi" },
+		.clock_rate = { { 0 },
 				{ 0 },
-				{ 320000000, 404000000, 480000000, 600000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
+				{ 19200000, 80000000},
+				{ 19200000, 150000000, 266666667, 320000000, 400000000, 480000000 },
+				{ 400000000, 558000000, 637000000, 847000000, 950000000 },
+				{ 0 }, },
 		.reg = { "vfe0" },
 		.interrupt = { "vfe0" },
 		.vfe = {
-			.line_num = 3,
+			.line_num = 4,
+			.is_lite = false,
 			.has_pd = true,
 			.pd_name = "ife0",
 			.hw_ops = &vfe_ops_170,
@@ -1854,18 +1266,18 @@ static const struct camss_subdev_resources vfe_res_sm6350[] = {
 	/* VFE1 */
 	{
 		.regulators = {},
-		.clock = { "cpas_ahb", "camnoc_axi", "vfe1",
-			   "vfe1_axi", "cam_axi", "soc_ahb" },
-		.clock_rate = { { 19200000 },
+		.clock = { "gcc_axi_hf", "gcc_axi_sf", "cpas_ahb", "camnoc_axi", "vfe1", "vfe1_axi" },
+		.clock_rate = { { 0 },
 				{ 0 },
-				{ 320000000, 404000000, 480000000, 600000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
+				{ 19200000, 80000000},
+				{ 19200000, 150000000, 266666667, 320000000, 400000000, 480000000 },
+				{ 400000000, 558000000, 637000000, 847000000, 950000000 },
+				{ 0 }, },
 		.reg = { "vfe1" },
 		.interrupt = { "vfe1" },
 		.vfe = {
-			.line_num = 3,
+			.line_num = 4,
+			.is_lite = false,
 			.has_pd = true,
 			.pd_name = "ife1",
 			.hw_ops = &vfe_ops_170,
@@ -1873,40 +1285,17 @@ static const struct camss_subdev_resources vfe_res_sm6350[] = {
 			.formats_pix = &vfe_formats_pix_845
 		}
 	},
-	/* VFE2 */
+	/* VFE_LITE_0 */
 	{
 		.regulators = {},
-		.clock = { "cpas_ahb", "camnoc_axi", "vfe2",
-			   "vfe2_axi", "cam_axi", "soc_ahb" },
-		.clock_rate = { { 19200000 },
+		.clock = { "gcc_axi_hf", "gcc_axi_sf", "cpas_ahb", "camnoc_axi", "vfe_lite0" },
+		.clock_rate = { { 0 },
 				{ 0 },
-				{ 320000000, 404000000, 480000000, 600000000 },
-				{ 0 },
-				{ 0 },
-				{ 0 } },
-		.reg = { "vfe2" },
-		.interrupt = { "vfe2" },
-		.vfe = {
-			.line_num = 3,
-			.has_pd = true,
-			.pd_name = "ife2",
-			.hw_ops = &vfe_ops_170,
-			.formats_rdi = &vfe_formats_rdi_845,
-			.formats_pix = &vfe_formats_pix_845
-		}
-	},
-	/* VFE3 (lite) */
-	{
-		.regulators = {},
-		.clock = { "cpas_ahb", "camnoc_axi", "vfe_lite",
-			   "cam_axi", "soc_ahb" },
-		.clock_rate = { { 19200000 },
-				{ 0 },
-				{ 400000000, 480000000 },
-				{ 0 },
-				{ 0 } },
-		.reg = { "vfe_lite" },
-		.interrupt = { "vfe_lite" },
+				{ 19200000, 80000000},
+				{ 19200000, 150000000, 266666667, 320000000, 400000000, 480000000 },
+				{ 320000000, 400000000, 480000000, 600000000 }, },
+		.reg = { "vfe_lite0" },
+		.interrupt = { "vfe_lite0" },
 		.vfe = {
 			.is_lite = true,
 			.line_num = 4,
@@ -1915,26 +1304,45 @@ static const struct camss_subdev_resources vfe_res_sm6350[] = {
 			.formats_pix = &vfe_formats_pix_845
 		}
 	},
+	/* VFE_LITE_1 */
+	{
+		.regulators = {},
+		.clock = { "gcc_axi_hf", "gcc_axi_sf", "cpas_ahb", "camnoc_axi", "vfe_lite1" },
+		.clock_rate = { { 0 },
+				{ 0 },
+				{ 19200000, 80000000},
+				{ 19200000, 150000000, 266666667, 320000000, 400000000, 480000000 },
+				{ 320000000, 400000000, 480000000, 600000000 }, },
+		.reg = { "vfe_lite1" },
+		.interrupt = { "vfe_lite1" },
+		.vfe = {
+			.is_lite = true,
+			.line_num = 4,
+			.hw_ops = &vfe_ops_170,
+			.formats_rdi = &vfe_formats_rdi_845,
+			.formats_pix = &vfe_formats_pix_845
+		}
+	}
 };
 
-static const struct resources_icc icc_res_sm6350[] = {
+static const struct resources_icc icc_res_sm8150[] = {
 	{
-		.name = "ahb",
-		.icc_bw_tbl.avg = 0,
-		.icc_bw_tbl.peak = 300000,
+		.name = "cam_ahb",
+		.icc_bw_tbl.avg = 38400,
+		.icc_bw_tbl.peak = 76800,
 	},
 	{
-		.name = "hf_mnoc",
+		.name = "cam_hf_0_mnoc",
 		.icc_bw_tbl.avg = 2097152,
 		.icc_bw_tbl.peak = 2097152,
 	},
 	{
-		.name = "sf_mnoc",
+		.name = "cam_hf_1_mnoc",
 		.icc_bw_tbl.avg = 2097152,
 		.icc_bw_tbl.peak = 2097152,
 	},
 	{
-		.name = "sf_icp_mnoc",
+		.name = "cam_sf_0_mnoc",
 		.icc_bw_tbl.avg = 2097152,
 		.icc_bw_tbl.peak = 2097152,
 	},
@@ -1943,102 +1351,78 @@ static const struct resources_icc icc_res_sm6350[] = {
 static const struct camss_subdev_resources csiphy_res_8250[] = {
 	/* CSIPHY0 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 17500 },
-			{ .supply = "vdda-pll", .init_load_uA = 10000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "csiphy0", "csiphy0_timer" },
 		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy0" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY1 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 17500 },
-			{ .supply = "vdda-pll", .init_load_uA = 10000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "csiphy1", "csiphy1_timer" },
 		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy1" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY2 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 17500 },
-			{ .supply = "vdda-pll", .init_load_uA = 10000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "csiphy2", "csiphy2_timer" },
 		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy2" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY3 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 17500 },
-			{ .supply = "vdda-pll", .init_load_uA = 10000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "csiphy3", "csiphy3_timer" },
 		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy3" },
 		.interrupt = { "csiphy3" },
 		.csiphy = {
-			.id = 3,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY4 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 17500 },
-			{ .supply = "vdda-pll", .init_load_uA = 10000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "csiphy4", "csiphy4_timer" },
 		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy4" },
 		.interrupt = { "csiphy4" },
 		.csiphy = {
-			.id = 4,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
 	},
 	/* CSIPHY5 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 17500 },
-			{ .supply = "vdda-pll", .init_load_uA = 10000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "csiphy5", "csiphy5_timer" },
 		.clock_rate = { { 400000000 },
 				{ 300000000 } },
 		.reg = { "csiphy5" },
 		.interrupt = { "csiphy5" },
 		.csiphy = {
-			.id = 5,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -2245,10 +1629,7 @@ static const struct resources_icc icc_res_sm8250[] = {
 static const struct camss_subdev_resources csiphy_res_7280[] = {
 	/* CSIPHY0 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 16100 },
-			{ .supply = "vdda-pll", .init_load_uA = 9000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 
 		.clock = { "csiphy0", "csiphy0_timer" },
 		.clock_rate = { { 300000000, 400000000 },
@@ -2256,17 +1637,13 @@ static const struct camss_subdev_resources csiphy_res_7280[] = {
 		.reg = { "csiphy0" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845,
+			.formats = &csiphy_formats_sc7280
 		}
 	},
 	/* CSIPHY1 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 16100 },
-			{ .supply = "vdda-pll", .init_load_uA = 9000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 
 		.clock = { "csiphy1", "csiphy1_timer" },
 		.clock_rate = { { 300000000, 400000000 },
@@ -2274,17 +1651,13 @@ static const struct camss_subdev_resources csiphy_res_7280[] = {
 		.reg = { "csiphy1" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845,
+			.formats = &csiphy_formats_sc7280
 		}
 	},
 	/* CSIPHY2 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 16100 },
-			{ .supply = "vdda-pll", .init_load_uA = 9000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 
 		.clock = { "csiphy2", "csiphy2_timer" },
 		.clock_rate = { { 300000000, 400000000 },
@@ -2292,17 +1665,13 @@ static const struct camss_subdev_resources csiphy_res_7280[] = {
 		.reg = { "csiphy2" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845,
+			.formats = &csiphy_formats_sc7280
 		}
 	},
 	/* CSIPHY3 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 16100 },
-			{ .supply = "vdda-pll", .init_load_uA = 9000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 
 		.clock = { "csiphy3", "csiphy3_timer" },
 		.clock_rate = { { 300000000, 400000000 },
@@ -2310,17 +1679,13 @@ static const struct camss_subdev_resources csiphy_res_7280[] = {
 		.reg = { "csiphy3" },
 		.interrupt = { "csiphy3" },
 		.csiphy = {
-			.id = 3,
 			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845,
+			.formats = &csiphy_formats_sc7280
 		}
 	},
 	/* CSIPHY4 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 16100 },
-			{ .supply = "vdda-pll", .init_load_uA = 9000 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 
 		.clock = { "csiphy4", "csiphy4_timer" },
 		.clock_rate = { { 300000000, 400000000 },
@@ -2328,9 +1693,8 @@ static const struct camss_subdev_resources csiphy_res_7280[] = {
 		.reg = { "csiphy4" },
 		.interrupt = { "csiphy4" },
 		.csiphy = {
-			.id = 4,
 			.hw_ops = &csiphy_ops_3ph_1_0,
-			.formats = &csiphy_formats_sdm845,
+			.formats = &csiphy_formats_sc7280
 		}
 	},
 };
@@ -2439,12 +1803,11 @@ static const struct camss_subdev_resources vfe_res_7280[] = {
 		.regulators = {},
 
 		.clock = { "camnoc_axi", "cpas_ahb", "icp_ahb", "vfe0",
-			   "vfe0_axi", "gcc_axi_hf", "gcc_axi_sf" },
+			   "vfe0_axi", "gcc_cam_hf_axi" },
 		.clock_rate = { { 150000000, 240000000, 320000000, 400000000, 480000000 },
 				{ 80000000 },
 				{ 0 },
 				{ 380000000, 510000000, 637000000, 760000000 },
-				{ 0 },
 				{ 0 },
 				{ 0 } },
 
@@ -2465,12 +1828,11 @@ static const struct camss_subdev_resources vfe_res_7280[] = {
 		.regulators = {},
 
 		.clock = { "camnoc_axi", "cpas_ahb", "icp_ahb", "vfe1",
-			   "vfe1_axi", "gcc_axi_hf", "gcc_axi_sf" },
+			   "vfe1_axi", "gcc_cam_hf_axi" },
 		.clock_rate = { { 150000000, 240000000, 320000000, 400000000, 480000000 },
 				{ 80000000 },
 				{ 0 },
 				{ 380000000, 510000000, 637000000, 760000000 },
-				{ 0 },
 				{ 0 },
 				{ 0 } },
 
@@ -2491,12 +1853,11 @@ static const struct camss_subdev_resources vfe_res_7280[] = {
 		.regulators = {},
 
 		.clock = { "camnoc_axi", "cpas_ahb", "icp_ahb", "vfe2",
-			   "vfe2_axi", "gcc_axi_hf", "gcc_axi_sf" },
+			   "vfe2_axi", "gcc_cam_hf_axi" },
 		.clock_rate = { { 150000000, 240000000, 320000000, 400000000, 480000000 },
 				{ 80000000 },
 				{ 0 },
 				{ 380000000, 510000000, 637000000, 760000000 },
-				{ 0 },
 				{ 0 },
 				{ 0 } },
 
@@ -2515,12 +1876,11 @@ static const struct camss_subdev_resources vfe_res_7280[] = {
 	/* VFE3 (lite) */
 	{
 		.clock = { "camnoc_axi", "cpas_ahb", "icp_ahb",
-			   "vfe_lite0", "gcc_axi_hf", "gcc_axi_sf" },
+			   "vfe_lite0", "gcc_cam_hf_axi" },
 		.clock_rate = { { 150000000, 240000000, 320000000, 400000000, 480000000 },
 				{ 80000000 },
 				{ 0 },
 				{ 320000000, 400000000, 480000000, 600000000 },
-				{ 0 },
 				{ 0 } },
 
 		.regulators = {},
@@ -2537,12 +1897,11 @@ static const struct camss_subdev_resources vfe_res_7280[] = {
 	/* VFE4 (lite) */
 	{
 		.clock = { "camnoc_axi", "cpas_ahb", "icp_ahb",
-			   "vfe_lite1", "gcc_axi_hf", "gcc_axi_sf" },
+			   "vfe_lite1", "gcc_cam_hf_axi" },
 		.clock_rate = { { 150000000, 240000000, 320000000, 400000000, 480000000 },
 				{ 80000000 },
 				{ 0 },
 				{ 320000000, 400000000, 480000000, 600000000 },
-				{ 0 },
 				{ 0 } },
 
 		.regulators = {},
@@ -2581,7 +1940,6 @@ static const struct camss_subdev_resources csiphy_res_sc8280xp[] = {
 		.reg = { "csiphy0" },
 		.interrupt = { "csiphy0" },
 		.csiphy = {
-			.id = 0,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -2595,7 +1953,6 @@ static const struct camss_subdev_resources csiphy_res_sc8280xp[] = {
 		.reg = { "csiphy1" },
 		.interrupt = { "csiphy1" },
 		.csiphy = {
-			.id = 1,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -2609,7 +1966,6 @@ static const struct camss_subdev_resources csiphy_res_sc8280xp[] = {
 		.reg = { "csiphy2" },
 		.interrupt = { "csiphy2" },
 		.csiphy = {
-			.id = 2,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -2623,7 +1979,6 @@ static const struct camss_subdev_resources csiphy_res_sc8280xp[] = {
 		.reg = { "csiphy3" },
 		.interrupt = { "csiphy3" },
 		.csiphy = {
-			.id = 3,
 			.hw_ops = &csiphy_ops_3ph_1_0,
 			.formats = &csiphy_formats_sdm845
 		}
@@ -2633,10 +1988,7 @@ static const struct camss_subdev_resources csiphy_res_sc8280xp[] = {
 static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	/* CSID0 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe0_csid", "vfe0_cphy_rx", "vfe0", "vfe0_axi" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2652,10 +2004,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID1 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe1_csid", "vfe1_cphy_rx", "vfe1", "vfe1_axi" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2671,10 +2020,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID2 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe2_csid", "vfe2_cphy_rx", "vfe2", "vfe2_axi" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2690,10 +2036,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID3 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe3_csid", "vfe3_cphy_rx", "vfe3", "vfe3_axi" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2709,10 +2052,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID_LITE0 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe_lite0_csid", "vfe_lite0_cphy_rx", "vfe_lite0" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2728,10 +2068,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID_LITE1 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe_lite1_csid", "vfe_lite1_cphy_rx", "vfe_lite1" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2747,10 +2084,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID_LITE2 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe_lite2_csid", "vfe_lite2_cphy_rx", "vfe_lite2" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -2766,10 +2100,7 @@ static const struct camss_subdev_resources csid_res_sc8280xp[] = {
 	},
 	/* CSID_LITE3 */
 	{
-		.regulators = {
-			{ .supply = "vdda-phy", .init_load_uA = 0 },
-			{ .supply = "vdda-pll", .init_load_uA = 0 }
-		},
+		.regulators = { "vdda-phy", "vdda-pll" },
 		.clock = { "vfe_lite3_csid", "vfe_lite3_cphy_rx", "vfe_lite3" },
 		.clock_rate = { { 400000000, 480000000, 600000000 },
 				{ 0 },
@@ -4510,12 +3841,12 @@ void camss_disable_clocks(int nclocks, struct camss_clock *clock)
 }
 
 /*
- * camss_find_sensor_pad - Find the media pad via which the sensor is linked
+ * camss_find_sensor - Find a linked media entity which represents a sensor
  * @entity: Media entity to start searching from
  *
- * Return a pointer to sensor media pad or NULL if not found
+ * Return a pointer to sensor media entity or NULL if not found
  */
-struct media_pad *camss_find_sensor_pad(struct media_entity *entity)
+struct media_entity *camss_find_sensor(struct media_entity *entity)
 {
 	struct media_pad *pad;
 
@@ -4531,7 +3862,7 @@ struct media_pad *camss_find_sensor_pad(struct media_entity *entity)
 		entity = pad->entity;
 
 		if (entity->function == MEDIA_ENT_F_CAM_SENSOR)
-			return pad;
+			return entity;
 	}
 }
 
@@ -4546,13 +3877,24 @@ struct media_pad *camss_find_sensor_pad(struct media_entity *entity)
 s64 camss_get_link_freq(struct media_entity *entity, unsigned int bpp,
 			unsigned int lanes)
 {
-	struct media_pad *sensor_pad;
+	struct media_entity *sensor;
+	const struct media_pad *pad = NULL;
+	int i;
 
-	sensor_pad = camss_find_sensor_pad(entity);
-	if (!sensor_pad)
+	sensor = camss_find_sensor(entity);
+	if (!sensor)
 		return -ENODEV;
 
-	return v4l2_get_link_freq(sensor_pad, bpp, 2 * lanes);
+	for (i = 0; i < sensor->num_pads; i++) {
+		if (sensor->pads[i].flags & MEDIA_PAD_FL_SOURCE) {
+			pad = &sensor->pads[i];
+			break;
+		}
+	}
+	if (!pad)
+		pad = &sensor->pads[0];
+
+	return v4l2_get_link_freq(pad, bpp, 2 * lanes);
 }
 
 /*
@@ -4564,15 +3906,15 @@ s64 camss_get_link_freq(struct media_entity *entity, unsigned int bpp,
  */
 int camss_get_pixel_clock(struct media_entity *entity, u64 *pixel_clock)
 {
-	struct media_pad *sensor_pad;
+	struct media_entity *sensor;
 	struct v4l2_subdev *subdev;
 	struct v4l2_ctrl *ctrl;
 
-	sensor_pad = camss_find_sensor_pad(entity);
-	if (!sensor_pad)
+	sensor = camss_find_sensor(entity);
+	if (!sensor)
 		return -ENODEV;
 
-	subdev = media_entity_to_v4l2_subdev(sensor_pad->entity);
+	subdev = media_entity_to_v4l2_subdev(sensor);
 
 	ctrl = v4l2_ctrl_find(subdev->ctrl_handler, V4L2_CID_PIXEL_RATE);
 
@@ -4672,9 +4014,9 @@ static const struct parent_dev_ops vfe_parent_dev_ops = {
 };
 
 /*
- * camss_parse_endpoint_node - Parse port endpoint node
- * @dev: CAMSS device
- * @ep: Device endpoint to be parsed
+ * camss_of_parse_endpoint_node - Parse port endpoint node
+ * @dev: Device
+ * @node: Device node to be parsed
  * @csd: Parsed data from port endpoint node
  *
  * Return 0 on success or a negative error code on failure
@@ -4690,18 +4032,9 @@ static int camss_parse_endpoint_node(struct device *dev,
 	unsigned int i;
 	int ret;
 
-	ret = v4l2_fwnode_endpoint_parse(ep, &vep);
+	ret = v4l2_fwnode_endpoint_parse(of_fwnode_handle(node), &vep);
 	if (ret)
 		return ret;
-
-	/*
-	 * Most SoCs support both D-PHY and C-PHY standards, but currently only
-	 * D-PHY is supported in the driver.
-	 */
-	if (vep.bus_type != V4L2_MBUS_CSI2_DPHY) {
-		dev_err(dev, "Unsupported bus type %d\n", vep.bus_type);
-		return -EINVAL;
-	}
 
 	csd->interface.csiphy_id = vep.base.port;
 
@@ -4730,12 +4063,13 @@ static int camss_parse_endpoint_node(struct device *dev,
 }
 
 /*
- * camss_parse_ports - Parse ports node
- * @dev: CAMSS device
+ * camss_of_parse_ports - Parse ports node
+ * @dev: Device
+ * @notifier: v4l2_device notifier data
  *
- * Return 0 on success or a negative error code on failure
+ * Return number of "port" nodes found in "ports" node
  */
-static int camss_parse_ports(struct camss *camss)
+static int camss_of_parse_ports(struct camss *camss)
 {
 	struct device *dev = camss->dev;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
@@ -4844,19 +4178,6 @@ static int camss_init_subdevices(struct camss *camss)
 		}
 	}
 
-	if (camss->tpg) {
-		for (i = 0; i < camss->res->tpg_num; i++) {
-			ret = msm_tpg_subdev_init(camss, &camss->tpg[i],
-						  &res->tpg_res[i], i);
-			if (ret < 0) {
-				dev_err(camss->dev,
-					"Failed to init tpg%d sub-device: %d\n",
-					i, ret);
-				return ret;
-			}
-		}
-	}
-
 	/* note: SM8250 requires VFE to be initialized before CSID */
 	for (i = 0; i < camss->res->vfe_num; i++) {
 		ret = msm_vfe_subdev_init(camss, &camss->vfe[i],
@@ -4911,6 +4232,7 @@ static int camss_init_subdevices(struct camss *camss)
 }
 
 /*
+ * camss_link_entities - Register subdev nodes and create links
  * camss_link_err - print error in case link creation fails
  * @src_name: name for source of the link
  * @sink_name: name for sink of the link
@@ -4956,23 +4278,6 @@ static int camss_link_entities(struct camss *camss)
 			if (ret < 0) {
 				camss_link_err(camss,
 					       camss->csiphy[i].subdev.entity.name,
-					       camss->csid[j].subdev.entity.name,
-					       ret);
-				return ret;
-			}
-		}
-	}
-
-	for (i = 0; i < camss->res->tpg_num; i++) {
-		for (j = 0; j < camss->res->csid_num; j++) {
-			ret = media_create_pad_link(&camss->tpg[i].subdev.entity,
-						    MSM_TPG_PAD_SRC,
-						    &camss->csid[j].subdev.entity,
-						    MSM_CSID_PAD_SINK,
-						    0);
-			if (ret < 0) {
-				camss_link_err(camss,
-					       camss->tpg[i].subdev.entity.name,
 					       camss->csid[j].subdev.entity.name,
 					       ret);
 				return ret;
@@ -5040,28 +4345,6 @@ static int camss_link_entities(struct camss *camss)
 	return 0;
 }
 
-void camss_reg_update(struct camss *camss, int hw_id, int port_id, bool is_clear)
-{
-	struct csid_device *csid;
-
-	if (hw_id < camss->res->csid_num) {
-		csid = &camss->csid[hw_id];
-
-		csid->res->hw_ops->reg_update(csid, port_id, is_clear);
-	}
-}
-
-void camss_buf_done(struct camss *camss, int hw_id, int port_id)
-{
-	struct vfe_device *vfe;
-
-	if (hw_id < camss->res->vfe_num) {
-		vfe = &camss->vfe[hw_id];
-
-		vfe->res->hw_ops->vfe_buf_done(vfe, port_id);
-	}
-}
-
 /*
  * camss_register_entities - Register subdev nodes and create links
  * @camss: CAMSS device
@@ -5084,19 +4367,6 @@ static int camss_register_entities(struct camss *camss)
 				"Failed to register csiphy%d entity: %d\n",
 				i, ret);
 			goto err_reg_csiphy;
-		}
-	}
-
-	if (camss->tpg) {
-		for (i = 0; i < camss->res->tpg_num; i++) {
-			ret = msm_tpg_register_entity(&camss->tpg[i],
-						      &camss->v4l2_dev);
-			if (ret < 0) {
-				dev_err(camss->dev,
-					"Failed to register tpg%d entity: %d\n",
-					i, ret);
-				goto err_reg_tpg;
-			}
 		}
 	}
 
@@ -5143,13 +4413,6 @@ err_reg_csid:
 	for (i--; i >= 0; i--)
 		msm_csid_unregister_entity(&camss->csid[i]);
 
-	i = camss->res->tpg_num;
-err_reg_tpg:
-	if (camss->tpg) {
-		for (i--; i >= 0; i--)
-			msm_tpg_unregister_entity(&camss->tpg[i]);
-	}
-
 	i = camss->res->csiphy_num;
 err_reg_csiphy:
 	for (i--; i >= 0; i--) {
@@ -5173,11 +4436,6 @@ static void camss_unregister_entities(struct camss *camss)
 	for (i = 0; i < camss->res->csiphy_num; i++) {
 		if (csiphy_enabled(camss, &camss->csiphy[i]))
 			msm_csiphy_unregister_entity(&camss->csiphy[i]);
-	}
-
-	if (camss->tpg) {
-		for (i = 0; i < camss->res->tpg_num; i++)
-			msm_tpg_unregister_entity(&camss->tpg[i]);
 	}
 
 	for (i = 0; i < camss->res->csid_num; i++)
@@ -5210,39 +4468,43 @@ static int camss_subdev_notifier_complete(struct v4l2_async_notifier *async)
 	struct camss *camss = container_of(async, struct camss, notifier);
 	struct v4l2_device *v4l2_dev = &camss->v4l2_dev;
 	struct v4l2_subdev *sd;
+	int ret;
 
 	list_for_each_entry(sd, &v4l2_dev->subdevs, list) {
-		struct csiphy_device *csiphy = sd->host_priv;
-		struct media_entity *input, *sensor;
-		unsigned int i;
-		int ret;
+		if (sd->host_priv) {
+			struct media_entity *sensor = &sd->entity;
+			struct csiphy_device *csiphy =
+					(struct csiphy_device *) sd->host_priv;
+			struct media_entity *input = &csiphy->subdev.entity;
+			unsigned int i;
 
-		if (!csiphy)
-			continue;
+			for (i = 0; i < sensor->num_pads; i++) {
+				if (sensor->pads[i].flags & MEDIA_PAD_FL_SOURCE)
+					break;
+			}
+			if (i == sensor->num_pads) {
+				dev_err(camss->dev,
+					"No source pad in external entity\n");
+				return -EINVAL;
+			}
 
-		input = &csiphy->subdev.entity;
-		sensor = &sd->entity;
-
-		for (i = 0; i < sensor->num_pads; i++) {
-			if (sensor->pads[i].flags & MEDIA_PAD_FL_SOURCE)
-				break;
-		}
-		if (i == sensor->num_pads) {
-			dev_err(camss->dev,
-				"No source pad in external entity\n");
-			return -EINVAL;
-		}
-
-		ret = media_create_pad_link(sensor, i, input,
-					    MSM_CSIPHY_PAD_SINK,
-					    MEDIA_LNK_FL_IMMUTABLE | MEDIA_LNK_FL_ENABLED);
-		if (ret < 0) {
-			camss_link_err(camss, sensor->name, input->name, ret);
-			return ret;
+			ret = media_create_pad_link(sensor, i,
+				input, MSM_CSIPHY_PAD_SINK,
+				MEDIA_LNK_FL_IMMUTABLE | MEDIA_LNK_FL_ENABLED);
+			if (ret < 0) {
+				camss_link_err(camss, sensor->name,
+					       input->name,
+					       ret);
+				return ret;
+			}
 		}
 	}
 
-	return v4l2_device_register_subdev_nodes(&camss->v4l2_dev);
+	ret = v4l2_device_register_subdev_nodes(&camss->v4l2_dev);
+	if (ret < 0)
+		return ret;
+
+	return media_device_register(&camss->media_dev);
 }
 
 static const struct v4l2_async_notifier_operations camss_subdev_notifier_ops = {
@@ -5415,6 +4677,7 @@ static int camss_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct camss *camss;
+	int num_subdevs;
 	int ret;
 
 	camss = devm_kzalloc_obj(dev, *camss);
@@ -5444,7 +4707,6 @@ static int camss_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	if (camss->res->version == CAMSS_8x16 ||
-	    camss->res->version == CAMSS_8x39 ||
 	    camss->res->version == CAMSS_8x53 ||
 	    camss->res->version == CAMSS_8x96) {
 		camss->ispif = devm_kzalloc_objs(dev, *camss->ispif, 1);
@@ -5484,7 +4746,7 @@ static int camss_probe(struct platform_device *pdev)
 	ret = v4l2_device_register(camss->dev, &camss->v4l2_dev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to register V4L2 device: %d\n", ret);
-		goto err_media_device_cleanup;
+		goto err_genpd_cleanup;
 	}
 
 	v4l2_async_nf_init(&camss->notifier, &camss->v4l2_dev);
@@ -5502,41 +4764,50 @@ static int camss_probe(struct platform_device *pdev)
 	ret = camss_parse_ports(camss);
 	if (ret < 0)
 		goto err_v4l2_device_unregister;
+	}
 
 	ret = camss_register_entities(camss);
 	if (ret < 0)
 		goto err_v4l2_device_unregister;
 
-	ret = camss_link_entities(camss);
+	ret = camss->res->link_entities(camss);
 	if (ret < 0)
 		goto err_register_subdevs;
 
-	ret = media_device_register(&camss->media_dev);
-	if (ret < 0) {
-		dev_err(dev, "Failed to register media device: %d\n", ret);
-		goto err_register_subdevs;
-	}
+	if (num_subdevs) {
+		camss->notifier.ops = &camss_subdev_notifier_ops;
 
-	camss->notifier.ops = &camss_subdev_notifier_ops;
-	ret = v4l2_async_nf_register(&camss->notifier);
-	if (ret) {
-		dev_err(dev,
-			"Failed to register async subdev nodes: %d\n", ret);
-		goto err_media_device_unregister;
+		ret = v4l2_async_nf_register(&camss->notifier);
+		if (ret) {
+			dev_err(dev,
+				"Failed to register async subdev nodes: %d\n",
+				ret);
+			goto err_register_subdevs;
+		}
+	} else {
+		ret = v4l2_device_register_subdev_nodes(&camss->v4l2_dev);
+		if (ret < 0) {
+			dev_err(dev, "Failed to register subdev nodes: %d\n",
+				ret);
+			goto err_register_subdevs;
+		}
+
+		ret = media_device_register(&camss->media_dev);
+		if (ret < 0) {
+			dev_err(dev, "Failed to register media device: %d\n",
+				ret);
+			goto err_register_subdevs;
+		}
 	}
 
 	return 0;
 
-err_media_device_unregister:
-	media_device_unregister(&camss->media_dev);
 err_register_subdevs:
 	camss_unregister_entities(camss);
 err_v4l2_device_unregister:
 	v4l2_device_unregister(&camss->v4l2_dev);
 	v4l2_async_nf_cleanup(&camss->notifier);
 	pm_runtime_disable(dev);
-err_media_device_cleanup:
-	media_device_cleanup(&camss->media_dev);
 err_genpd_cleanup:
 	camss_genpd_cleanup(camss);
 
@@ -5581,17 +4852,7 @@ static const struct camss_resources msm8916_resources = {
 	.csiphy_num = ARRAY_SIZE(csiphy_res_8x16),
 	.csid_num = ARRAY_SIZE(csid_res_8x16),
 	.vfe_num = ARRAY_SIZE(vfe_res_8x16),
-};
-
-static const struct camss_resources msm8939_resources = {
-	.version = CAMSS_8x39,
-	.csiphy_res = csiphy_res_8x39,
-	.csid_res = csid_res_8x39,
-	.ispif_res = &ispif_res_8x39,
-	.vfe_res = vfe_res_8x39,
-	.csiphy_num = ARRAY_SIZE(csiphy_res_8x39),
-	.csid_num = ARRAY_SIZE(csid_res_8x39),
-	.vfe_num = ARRAY_SIZE(vfe_res_8x39),
+	.link_entities = camss_link_entities
 };
 
 static const struct camss_resources msm8953_resources = {
@@ -5605,6 +4866,7 @@ static const struct camss_resources msm8953_resources = {
 	.csiphy_num = ARRAY_SIZE(csiphy_res_8x96),
 	.csid_num = ARRAY_SIZE(csid_res_8x53),
 	.vfe_num = ARRAY_SIZE(vfe_res_8x53),
+	.link_entities = camss_link_entities
 };
 
 static const struct camss_resources msm8996_resources = {
@@ -5672,53 +4934,33 @@ static const struct camss_resources sdm660_resources = {
 	.csiphy_num = ARRAY_SIZE(csiphy_res_660),
 	.csid_num = ARRAY_SIZE(csid_res_660),
 	.vfe_num = ARRAY_SIZE(vfe_res_660),
-};
-
-static const struct camss_resources sdm670_resources = {
-	.version = CAMSS_845,
-	.csiphy_res = csiphy_res_670,
-	.csid_res = csid_res_670,
-	.vfe_res = vfe_res_670,
-	.csiphy_num = ARRAY_SIZE(csiphy_res_670),
-	.csid_num = ARRAY_SIZE(csid_res_670),
-	.vfe_num = ARRAY_SIZE(vfe_res_670),
+	.link_entities = camss_link_entities
 };
 
 static const struct camss_resources sdm845_resources = {
 	.version = CAMSS_845,
-	.pd_name = "top",
 	.csiphy_res = csiphy_res_845,
 	.csid_res = csid_res_845,
 	.vfe_res = vfe_res_845,
 	.csiphy_num = ARRAY_SIZE(csiphy_res_845),
 	.csid_num = ARRAY_SIZE(csid_res_845),
 	.vfe_num = ARRAY_SIZE(vfe_res_845),
+	.link_entities = camss_link_entities
 };
 
-static const struct camss_resources sm6150_resources = {
-	.version = CAMSS_6150,
+static const struct camss_resources sm8150_resources = {
+	.version = CAMSS_8150,
 	.pd_name = "top",
-	.csiphy_res = csiphy_res_sm6150,
-	.csid_res = csid_res_sm6150,
-	.vfe_res = vfe_res_sm6150,
-	.icc_res = icc_res_sm6150,
-	.icc_path_num = ARRAY_SIZE(icc_res_sm6150),
-	.csiphy_num = ARRAY_SIZE(csiphy_res_sm6150),
-	.csid_num = ARRAY_SIZE(csid_res_sm6150),
-	.vfe_num = ARRAY_SIZE(vfe_res_sm6150),
-};
-
-static const struct camss_resources sm6350_resources = {
-	.version = CAMSS_6350,
-	.pd_name = "top",
-	.csiphy_res = csiphy_res_sm6350,
-	.csid_res = csid_res_sm6350,
-	.vfe_res = vfe_res_sm6350,
-	.icc_res = icc_res_sm6350,
-	.icc_path_num = ARRAY_SIZE(icc_res_sm6350),
-	.csiphy_num = ARRAY_SIZE(csiphy_res_sm6350),
-	.csid_num = ARRAY_SIZE(csid_res_sm6350),
-	.vfe_num = ARRAY_SIZE(vfe_res_sm6350),
+	.csiphy_res = csiphy_res_sm8150,
+	.csid_res = csid_res_sm8150,
+	.ispif_res = NULL,
+	.vfe_res = vfe_res_sm8150,
+	.icc_res = icc_res_sm8150,
+	.csiphy_num = ARRAY_SIZE(csiphy_res_sm8150),
+	.csid_num = ARRAY_SIZE(csid_res_sm8150),
+	.vfe_num = ARRAY_SIZE(vfe_res_sm8150),
+	.icc_path_num = ARRAY_SIZE(icc_res_sm8150),
+	.link_entities = camss_link_entities
 };
 
 static const struct camss_resources sm8250_resources = {
@@ -5732,6 +4974,7 @@ static const struct camss_resources sm8250_resources = {
 	.csiphy_num = ARRAY_SIZE(csiphy_res_8250),
 	.csid_num = ARRAY_SIZE(csid_res_8250),
 	.vfe_num = ARRAY_SIZE(vfe_res_8250),
+	.link_entities = camss_link_entities
 };
 
 static const struct camss_resources sc8280xp_resources = {
@@ -5746,6 +4989,7 @@ static const struct camss_resources sc8280xp_resources = {
 	.csiphy_num = ARRAY_SIZE(csiphy_res_sc8280xp),
 	.csid_num = ARRAY_SIZE(csid_res_sc8280xp),
 	.vfe_num = ARRAY_SIZE(vfe_res_sc8280xp),
+	.link_entities = camss_link_entities
 };
 
 static const struct camss_resources sc7280_resources = {
@@ -5759,67 +5003,18 @@ static const struct camss_resources sc7280_resources = {
 	.csiphy_num = ARRAY_SIZE(csiphy_res_7280),
 	.csid_num = ARRAY_SIZE(csid_res_7280),
 	.vfe_num = ARRAY_SIZE(vfe_res_7280),
-};
-
-static const struct camss_resources sm8550_resources = {
-	.version = CAMSS_8550,
-	.pd_name = "top",
-	.csiphy_res = csiphy_res_8550,
-	.csid_res = csid_res_8550,
-	.vfe_res = vfe_res_8550,
-	.csid_wrapper_res = &csid_wrapper_res_sm8550,
-	.icc_res = icc_res_sm8550,
-	.icc_path_num = ARRAY_SIZE(icc_res_sm8550),
-	.csiphy_num = ARRAY_SIZE(csiphy_res_8550),
-	.csid_num = ARRAY_SIZE(csid_res_8550),
-	.vfe_num = ARRAY_SIZE(vfe_res_8550),
-};
-
-static const struct camss_resources sm8650_resources = {
-	.version = CAMSS_8650,
-	.pd_name = "top",
-	.csiphy_res = csiphy_res_sm8650,
-	.csid_res = csid_res_sm8650,
-	.csid_wrapper_res = &csid_wrapper_res_sm8550,
-	.vfe_res = vfe_res_sm8650,
-	.icc_res = icc_res_sm8650,
-	.icc_path_num = ARRAY_SIZE(icc_res_sm8650),
-	.csiphy_num = ARRAY_SIZE(csiphy_res_sm8650),
-	.csid_num = ARRAY_SIZE(csid_res_sm8650),
-	.vfe_num = ARRAY_SIZE(vfe_res_sm8650),
-};
-
-static const struct camss_resources x1e80100_resources = {
-	.version = CAMSS_X1E80100,
-	.pd_name = "top",
-	.csiphy_res = csiphy_res_x1e80100,
-	.tpg_res = tpg_res_x1e80100,
-	.csid_res = csid_res_x1e80100,
-	.vfe_res = vfe_res_x1e80100,
-	.csid_wrapper_res = &csid_wrapper_res_x1e80100,
-	.icc_res = icc_res_x1e80100,
-	.icc_path_num = ARRAY_SIZE(icc_res_x1e80100),
-	.csiphy_num = ARRAY_SIZE(csiphy_res_x1e80100),
-	.tpg_num = ARRAY_SIZE(tpg_res_x1e80100),
-	.csid_num = ARRAY_SIZE(csid_res_x1e80100),
-	.vfe_num = ARRAY_SIZE(vfe_res_x1e80100),
+	.link_entities = camss_link_entities
 };
 
 static const struct of_device_id camss_dt_match[] = {
 	{ .compatible = "qcom,msm8916-camss", .data = &msm8916_resources },
-	{ .compatible = "qcom,msm8939-camss", .data = &msm8939_resources },
 	{ .compatible = "qcom,msm8953-camss", .data = &msm8953_resources },
 	{ .compatible = "qcom,msm8996-camss", .data = &msm8996_resources },
-	{ .compatible = "qcom,qcm2290-camss", .data = &qcm2290_resources },
-	{ .compatible = "qcom,qcs8300-camss", .data = &qcs8300_resources },
-	{ .compatible = "qcom,sa8775p-camss", .data = &sa8775p_resources },
 	{ .compatible = "qcom,sc7280-camss", .data = &sc7280_resources },
 	{ .compatible = "qcom,sc8280xp-camss", .data = &sc8280xp_resources },
 	{ .compatible = "qcom,sdm660-camss", .data = &sdm660_resources },
-	{ .compatible = "qcom,sdm670-camss", .data = &sdm670_resources },
 	{ .compatible = "qcom,sdm845-camss", .data = &sdm845_resources },
-	{ .compatible = "qcom,sm6150-camss", .data = &sm6150_resources },
-	{ .compatible = "qcom,sm6350-camss", .data = &sm6350_resources },
+	{ .compatible = "qcom,sm8150-camss", .data = &sm8150_resources },
 	{ .compatible = "qcom,sm8250-camss", .data = &sm8250_resources },
 	{ .compatible = "qcom,sm8550-camss", .data = &sm8550_resources },
 	{ .compatible = "qcom,sm8650-camss", .data = &sm8650_resources },
@@ -5891,6 +5086,7 @@ static struct platform_driver qcom_camss_driver = {
 
 module_platform_driver(qcom_camss_driver);
 
+MODULE_ALIAS("platform:qcom-camss");
 MODULE_DESCRIPTION("Qualcomm Camera Subsystem driver");
 MODULE_AUTHOR("Todor Tomov <todor.tomov@linaro.org>");
 MODULE_LICENSE("GPL v2");

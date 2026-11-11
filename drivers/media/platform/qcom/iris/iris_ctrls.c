@@ -326,6 +326,22 @@ static int iris_op_s_ctrl(struct v4l2_ctrl *ctrl)
 	struct platform_inst_fw_cap *cap;
 	struct vb2_queue *q;
 
+	q = v4l2_m2m_get_src_vq(inst->m2m_ctx);
+	switch (ctrl->id) {
+	case V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY:
+		if (inst->domain != DECODER || vb2_is_streaming(q))
+			return -EINVAL;
+		inst->display_delay = ctrl->val;
+		return 0;
+	case V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE:
+		if (inst->domain != DECODER || vb2_is_streaming(q))
+			return -EINVAL;
+		inst->display_delay_enable = ctrl->val;
+		return 0;
+	default:
+		break;
+	}
+
 	cap = &inst->fw_caps[0];
 	cap_id = iris_get_cap_id(ctrl->id);
 	if (!iris_valid_cap_id(cap_id))
@@ -364,12 +380,17 @@ int iris_ctrls_init(struct iris_inst *inst)
 			num_ctrls++;
 	}
 
-	/* Adding 1 to num_ctrls to include
+	/* Adding extra_ctrls to num_ctrls to include
 	 * V4L2_CID_MIN_BUFFERS_FOR_CAPTURE for decoder and
-	 * V4L2_CID_MIN_BUFFERS_FOR_OUTPUT for encoder
+	 * V4L2_CID_MIN_BUFFERS_FOR_OUTPUT for encoder plus
+	 * display delay controls on legacy VPU5
 	 */
+	u32 extra_ctrls = 1;
 
-	ret = v4l2_ctrl_handler_init(&inst->ctrl_handler, num_ctrls + 1);
+	if (inst->domain == DECODER && inst->core->iris_platform_data->legacy_vpu5)
+		extra_ctrls += 2;
+
+	ret = v4l2_ctrl_handler_init(&inst->ctrl_handler, num_ctrls + extra_ctrls);
 	if (ret)
 		return ret;
 
@@ -412,6 +433,15 @@ int iris_ctrls_init(struct iris_inst *inst)
 	if (inst->domain == DECODER) {
 		v4l2_ctrl_new_std(&inst->ctrl_handler, NULL,
 				  V4L2_CID_MIN_BUFFERS_FOR_CAPTURE, 1, 32, 1, 4);
+
+		if (inst->core->iris_platform_data->legacy_vpu5) {
+			v4l2_ctrl_new_std(&inst->ctrl_handler, &iris_ctrl_ops,
+					  V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY,
+					  0, 16383, 1, 0);
+			v4l2_ctrl_new_std(&inst->ctrl_handler, &iris_ctrl_ops,
+					  V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE,
+					  0, 1, 1, 0);
+		}
 	} else {
 		v4l2_ctrl_new_std(&inst->ctrl_handler, NULL,
 				  V4L2_CID_MIN_BUFFERS_FOR_OUTPUT, 1, 32, 1, 4);

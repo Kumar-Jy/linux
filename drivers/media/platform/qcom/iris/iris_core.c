@@ -19,6 +19,8 @@ void iris_core_deinit(struct iris_core *core)
 
 	mutex_lock(&core->lock);
 	if (core->state != IRIS_CORE_DEINIT) {
+		if (core->iris_platform_data->legacy_vpu5)
+			iris_set_hw_state(core, false);
 		iris_fw_unload(core);
 
 		if (!ret)
@@ -78,6 +80,15 @@ int iris_core_init(struct iris_core *core)
 	if (ret)
 		goto error_power_off;
 
+	if (core->iris_platform_data->legacy_vpu5) {
+		ret = iris_set_hw_state(core, true);
+		if (ret) {
+			dev_err(core->dev,
+				"failed to resume secure VPU5 hardware state: %d\n", ret);
+			goto error_unload_fw;
+		}
+	}
+
 	ret = iris_vpu_boot_firmware(core);
 	if (ret)
 		goto error_unload_fw;
@@ -101,6 +112,8 @@ int iris_core_init(struct iris_core *core)
 	return iris_wait_for_system_response(core);
 
 error_unload_fw:
+	if (core->iris_platform_data->legacy_vpu5)
+		iris_set_hw_state(core, false);
 	iris_fw_unload(core);
 error_power_off:
 	iris_vpu_power_off(core);

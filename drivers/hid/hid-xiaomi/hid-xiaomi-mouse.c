@@ -9,7 +9,7 @@
 #include <linux/module.h>
 #include <linux/hid.h>
 
-#include "hid-ids.h"
+#include "../hid-ids.h"
 
 /* Fixed Mi Silent Mouse report descriptor */
 /* Button's Usage Maximum changed from 3 to 5 to make side buttons work */
@@ -76,18 +76,18 @@ static const __u8 *xiaomi_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 	return rdesc;
 }
 
-static const struct hid_device_id xiaomi_devices[] = {
+static const struct hid_device_id xiaomi_mouse[] = {
 	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_XIAOMI, USB_DEVICE_ID_MI_SILENT_MOUSE) },
 	{ }
 };
-MODULE_DEVICE_TABLE(hid, xiaomi_devices);
+MODULE_DEVICE_TABLE(hid, xiaomi_mouse);
 
-static struct hid_driver xiaomi_driver = {
-	.name = "xiaomi",
-	.id_table = xiaomi_devices,
+static struct hid_driver hid_xiaomi_mouse = {
+	.name = "hid-xiaomi-mouse",
+	.id_table = xiaomi_mouse,
 	.report_fixup = xiaomi_report_fixup,
 };
-module_hid_driver(xiaomi_driver);
+module_hid_driver(hid_xiaomi_mouse);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ilya Skriblovsky <IlyaSkriblovsky@gmail.com>");

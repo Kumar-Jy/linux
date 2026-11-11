@@ -22,6 +22,8 @@
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 
+#include "../msm/msm_kms.h"
+
 #define DSI_NUM_MIN 1
 
 struct panel_info {
@@ -56,6 +58,150 @@ struct panel_desc {
 static inline struct panel_info *to_panel_info(struct drm_panel *panel)
 {
 	return container_of(panel, struct panel_info, panel);
+}
+
+/*
+ * The nabu panel is a TDDI part: its touch controller is clocked off the
+ * display timing and has to be told which refresh rate the panel is being
+ * switched to. Without the notification its firmware watchdog trips and touch
+ * stops scanning until the driver is reloaded - which is exactly what happens
+ * when dfps is used without this hook.
+ *
+ * Byte values are taken verbatim from the stock dtbo
+ * (qcom,mdss-dsi-dispparam-pen-120hz-command / -60hz-command): enter page 0x2A,
+ * write 0x0d for 120 Hz or 0x0c for 60 Hz to reg 0x23, return to page 0x10.
+ */
+static struct panel_info *nabu_sync_panel;
+
+int (*msm_dfps_sync_pen_hook)(u32 fps);
+
+/*
+ * Set by dfps_store() for the duration of one notification: when the frame
+ * shrinks (60 -> 120), the DSI controller has no VIDEO_DONE boundary left to
+ * wait for, and the 70 ms timeout delays the page write past the point where
+ * the panel is consistent - which shows up as a flash.  Skipping the wait is
+ * fine only because the command is sent after the timing change has landed.
+ */
+bool msm_dfps_sync_pen_skip_wait;
+
+/*
+ * Forward a refresh-rate change to the TDDI touch half.
+ *
+ * Called from dfps_store() *after* the atomic commit has switched the timing:
+ * the panel is already scanning at the new rate, so the page-0x2A write is
+ * consistent with it.  Sending the sequence before the commit leaves the touch
+ * IC on the new rate while the panel still runs the old one for a commit
+ * interval, and its firmware watchdog trips (`Recover for fw reset, FD`).
+ *
+ * The 1 ms pause before the page restore is mandatory: three back-to-back
+ * writes leave the display IC on page 0x2A while the scan side keeps
+ * programming, which shows as a blank panel.
+ */
+
+static int nabu_sync_pen_fps(u32 fps)
+{
+	struct panel_info *pinfo = nabu_sync_panel;
+	struct mipi_dsi_device *dsi;
+	struct mipi_dsi_msg msgs[3];
+	u8 page[2] = { 0xff, 0x2a };
+	u8 rate[2] = { 0x23, 0x00 };
+	u8 restore[2] = { 0xff, 0x10 };
+	int ret;
+
+	if (!pinfo || !pinfo->dsi[0])
+		return -ENODEV;
+
+	if (fps != 120 && fps != 60)
+		return -EINVAL;
+
+	dsi = pinfo->dsi[0];
+	rate[1] = (fps == 120) ? 0x0d : 0x0c;
+
+	memset(msgs, 0, sizeof(msgs));
+	msgs[0].channel = dsi->channel;
+	msgs[0].type = MIPI_DSI_DCS_SHORT_WRITE_PARAM;
+	/*
+	 * vendor runs this command set in LP mode (dsi_lp_mode in the DT):
+	 * each transfer then takes ~20us, which is what spaces the three
+	 * commands far enough apart for the TDDI to accept the page restore.
+	 * The earlier "LP causes continuous flicker" observation came from
+	 * commands landing in the active scan (TRIG_CTRL bit12 was set); with
+	 * the schedule now inside VFP, LP no longer disturbs the video.
+	 */
+	msgs[0].flags = MIPI_DSI_MSG_USE_LPM;
+	msgs[0].tx_buf = page;
+	msgs[0].tx_len = 2;
+
+	msgs[1] = msgs[0];
+	msgs[1].tx_buf = rate;
+
+	msgs[2] = msgs[0];
+	msgs[2].tx_buf = restore;
+
+	/*
+	 * Exactly the vendor shape: three DCS short writes in one DMA packet,
+	 * no delay between them, released by the controller's line scheduler
+	 * inside the vertical blanking interval.
+	 */
+	ret = msm_dsi_host_send_cmd_batch(dsi->host,
+					  pinfo->dsi[1] ? pinfo->dsi[1]->host : NULL,
+					  msgs, 3);
+
+	pr_info("nabu: sync-pen %u Hz (hw-sched) -> %d\n", fps, ret);
+
+	return ret;
+}
+
+/*
+ * Re-apply the touch sync period without going through the VFP scheduler.
+ * Called from the panel init sequence, where the video engine is not running
+ * yet, so the batch path (which waits for an INTF scan line) would only burn
+ * its guard timeout.
+ *
+ * Vendor does exactly this from dsi_panel_post_enable() on every panel
+ * enable: the DDIC loses page 0x2A / reg 0x23 whenever it is powered down or
+ * reset on blank.  Without the re-apply a 60Hz session that blanks once comes
+ * back with the display at 60Hz but the touch sync at the 120Hz default, and
+ * the NT36523 firmware resets itself (0xFD storm -> Recover for fw reset ->
+ * firmware download races the next blank -> dead touch until the next wake).
+ */
+static int nabu_sync_pen_direct(u32 fps)
+{
+	struct panel_info *pinfo = nabu_sync_panel;
+	struct mipi_dsi_device *dsi0, *dsi1;
+	struct mipi_dsi_multi_context dsi_ctx = { .dsi = NULL };
+	u8 rate;
+
+	if (!pinfo || !pinfo->dsi[0])
+		return -ENODEV;
+
+	if (fps != 120 && fps != 60)
+		fps = 120;
+
+	dsi0 = pinfo->dsi[0];
+	dsi1 = pinfo->dsi[1];
+	rate = (fps == 120) ? 0x0d : 0x0c;
+
+	u8 page[2] = { 0xff, 0x2a };
+	u8 rate_buf[2] = { 0x23, rate };
+	u8 restore[2] = { 0xff, 0x10 };
+
+	dsi_ctx.dsi = dsi0;
+	mipi_dsi_dual_dcs_write_buffer_multi(&dsi_ctx, dsi0, dsi1, page,
+					     ARRAY_SIZE(page));
+	mipi_dsi_dual_dcs_write_buffer_multi(&dsi_ctx, dsi0, dsi1, rate_buf,
+					     ARRAY_SIZE(rate_buf));
+	usleep_range(1000, 1100);
+	mipi_dsi_dual_dcs_write_buffer_multi(&dsi_ctx, dsi0, dsi1, restore,
+					     ARRAY_SIZE(restore));
+
+	if (dsi_ctx.accum_err)
+		dev_warn(&dsi0->dev, "sync-pen reapply (%u Hz) failed: %d\n",
+			 fps, dsi_ctx.accum_err);
+	else
+		dev_info(&dsi0->dev, "sync-pen reapplied for %u Hz after init\n", fps);
+
+	return dsi_ctx.accum_err;
 }
 
 static int elish_boe_init_sequence(struct panel_info *pinfo)
@@ -476,6 +622,222 @@ static int elish_csot_init_sequence(struct panel_info *pinfo)
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x29);
 
 	return dsi_ctx.accum_err;
+}
+
+static int nabu_csot_init_sequence(struct panel_info *pinfo)
+{
+	struct mipi_dsi_device *dsi0 = pinfo->dsi[0];
+	struct mipi_dsi_device *dsi1 = pinfo->dsi[1];
+	struct mipi_dsi_multi_context dsi_ctx = { .dsi = NULL };
+	/* No datasheet, so write magic init sequence directly */
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb9, 0x05);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x20);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x18, 0x40);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb9, 0x02);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0xd0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x02, 0xaf);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x00, 0x30);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x09, 0xee);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x1c, 0x99);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x1d, 0x09);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0xf0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3a, 0x08);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0xe0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4f, 0x02);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x35, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x23);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x00, 0x80);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x01, 0x84);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x05, 0x2d);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x06, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x07, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x08, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x09, 0x45);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x11, 0x02);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x12, 0x80);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x15, 0x83);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x16, 0x0c);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x29, 0x0a);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x30, 0xff);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x31, 0xfe);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x32, 0xfd);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x33, 0xfb);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x34, 0xf8);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x35, 0xf5);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x36, 0xf3);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x37, 0xf2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x38, 0xf2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x39, 0xf2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3a, 0xef);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3b, 0xec);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3d, 0xe9);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3f, 0xe5);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x40, 0xe5);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x41, 0xe5);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x2a, 0x13);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x45, 0xff);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x46, 0xf4);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x47, 0xe7);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x48, 0xda);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x49, 0xcd);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4a, 0xc0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4b, 0xb3);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4c, 0xb2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4d, 0xb2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4e, 0xb2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x4f, 0x99);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x50, 0x80);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x51, 0x68);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x52, 0x66);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x53, 0x66);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x54, 0x66);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x2b, 0x0e);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x58, 0xff);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x59, 0xfb);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x5a, 0xf7);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x5b, 0xf3);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x5c, 0xef);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x5d, 0xe3);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x5e, 0xda);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x5f, 0xd8);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x60, 0xd8);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x61, 0xd8);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x62, 0xcb);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x63, 0xbf);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x64, 0xb3);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x65, 0xb2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x66, 0xb2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x67, 0xb2);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x51, 0x0f, 0xff);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x53, 0x24);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x55, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbb, 0x13);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3b, 0x03, 0xac, 0x1a, 0x04, 0x04);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x2a);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x25, 0x46);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x30, 0x46);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x39, 0x46);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x26);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x01, 0xb0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x19, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x1a, 0xe0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x1b, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x1c, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x2a, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x2b, 0xe0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x26);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x01, 0xb0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0xf0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x84, 0x08);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x85, 0x0c);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x20);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x51, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x25);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x91, 0x1f);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x92, 0x0f);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x93, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x94, 0x18);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x95, 0x03);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x96, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb0, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x25);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x19, 0x1f);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x1b, 0x1b);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x24);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb8, 0x28);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x27);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd0, 0x31);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xde, 0x80);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xdf, 0x02);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd1, 0x20);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd4, 0x08);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x26);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x00, 0x81);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x01, 0xb0);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x22);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x6f, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x70, 0x11);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x73, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x74, 0x4d);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xa0, 0x3f);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xa9, 0x50);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xaa, 0x28);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xab, 0x28);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xad, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb8, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb9, 0x4b);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xba, 0x96);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbb, 0x4b);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbe, 0x07);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbf, 0x4b);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc0, 0x07);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc1, 0x5c);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc2, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc5, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc6, 0x3f);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc7, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xca, 0x08);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xcb, 0x40);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xce, 0x00);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xcf, 0x08);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd0, 0x40);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd3, 0x08);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd4, 0x40);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x25);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbc, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbd, 0x1c);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x2a);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x9a, 0x03);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x11);
+	msleep(70);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x29);
+
+	/*
+	 * Vendor runs DISPPARAM_DIMMING (0x53 = 0x2C, BLDIM=1) 120 ms after
+	 * panel-on; the init sequence itself leaves 0x53 at 0x24.  Without
+	 * this switch the panel keeps its own dimming off, which is visible
+	 * at 60 Hz as a faint brightness ripple.
+	 */
+	msleep(120);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x53, 0x2c);
+
+	/*
+	 * The DDIC was power-cycled and reset for this enable, so its touch
+	 * sync page (0x2A / 0x23) is back at the 120Hz default.  Re-apply the
+	 * rate the controller is actually running at (vendor does the same
+	 * from dsi_panel_post_enable on every enable).
+	 */
+	nabu_sync_pen_direct(msm_dsi_host_dfps_get_fps(dsi0->host));
+
+	return 0;
 }
 
 static int j606f_boe_init_sequence(struct panel_info *pinfo)
@@ -915,6 +1277,37 @@ static const struct drm_display_mode elish_csot_modes[] = {
 	},
 };
 
+static const struct drm_display_mode nabu_csot_modes[] = {
+	{
+		.clock = (1600 + 88 + 40 + 40) * (2560 + 26 + 4 + 168) * 120 / 1000,
+		.hdisplay = 1600,
+		.hsync_start = 1600 + 88,
+		.hsync_end = 1600 + 88 + 40,
+		.htotal = 1600 + 88 + 40 + 40,
+		.vdisplay = 2560,
+		.vsync_start = 2560 + 26,
+		.vsync_end = 2560 + 26 + 4,
+		.vtotal = 2560 + 26 + 4 + 168,
+	},
+	{
+		/*
+		 * 60 Hz sibling of the mode above: same pixel clock, same
+		 * porches, vtotal doubled. Exposed so the compositor can offer
+		 * a real refresh-rate choice; the dfps path is what actually
+		 * programs it seamlessly (see msm_dsi_manager_dfps_set()).
+		 */
+		.clock = (1600 + 88 + 40 + 40) * (2560 + 26 + 4 + 168) * 120 / 1000,
+		.hdisplay = 1600,
+		.hsync_start = 1600 + 88,
+		.hsync_end = 1600 + 88 + 40,
+		.htotal = 1600 + 88 + 40 + 40,
+		.vdisplay = 2560,
+		.vsync_start = 2560 + 26 + 2758,
+		.vsync_end = 2560 + 26 + 4 + 2758,
+		.vtotal = (2560 + 26 + 4 + 168) * 2,
+	},
+};
+
 static const struct drm_display_mode j606f_boe_modes[] = {
 	{
 		.clock = (1200 + 58 + 2 + 60) * (2000 + 26 + 2 + 93) * 60 / 1000,
@@ -964,6 +1357,24 @@ static const struct panel_desc elish_csot_desc = {
 	.format = MIPI_DSI_FMT_RGB888,
 	.mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_CLOCK_NON_CONTINUOUS | MIPI_DSI_MODE_LPM,
 	.init_sequence = elish_csot_init_sequence,
+	.is_dual_dsi = true,
+};
+
+static const struct panel_desc nabu_csot_desc = {
+	.modes = nabu_csot_modes,
+	.num_modes = ARRAY_SIZE(nabu_csot_modes),
+	.dsi_info = {
+		.type = "CSOT-nabu",
+		.channel = 0,
+		.node = NULL,
+	},
+	.width_mm = 148,
+	.height_mm = 236,
+	.bpc = 8,
+	.lanes = 3,
+	.format = MIPI_DSI_FMT_RGB888,
+	.mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_CLOCK_NON_CONTINUOUS | MIPI_DSI_MODE_LPM,
+	.init_sequence = nabu_csot_init_sequence,
 	.is_dual_dsi = true,
 };
 
@@ -1182,6 +1593,15 @@ static int nt36523_probe(struct mipi_dsi_device *dsi)
 	if (!pinfo->desc)
 		return -ENODEV;
 
+	/*
+	 * TDDI panel: let the dfps path tell the touch controller about
+	 * refresh-rate changes (see nabu_sync_pen_fps above).
+	 */
+	if (pinfo->desc == &nabu_csot_desc) {
+		nabu_sync_panel = pinfo;
+		msm_dfps_sync_pen_hook = nabu_sync_pen_fps;
+	}
+
 	/* If the panel is dual dsi, register DSI1 */
 	if (pinfo->desc->is_dual_dsi) {
 		info = &pinfo->desc->dsi_info;
@@ -1253,6 +1673,10 @@ static const struct of_device_id nt36523_of_match[] = {
 	{
 		.compatible = "xiaomi,elish-csot-nt36523",
 		.data = &elish_csot_desc,
+	},
+	{
+		.compatible = "xiaomi,nabu-csot-nt36523",
+		.data = &nabu_csot_desc,
 	},
 	{},
 };

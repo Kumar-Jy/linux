@@ -10,6 +10,7 @@
 #include "iris_buffer.h"
 #include "iris_common.h"
 #include "iris_ctrls.h"
+#include "iris_hfi_gen1_defines.h"
 #include "iris_instance.h"
 #include "iris_power.h"
 #include "iris_vdec.h"
@@ -373,6 +374,24 @@ int iris_vdec_streamon_input(struct iris_inst *inst)
 	ret = iris_set_properties(inst, V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 	if (ret)
 		return ret;
+
+	if (inst->core->iris_platform_data->legacy_vpu5 &&
+	    inst->display_delay_enable && !inst->display_delay) {
+		const struct iris_hfi_session_ops *hfi_ops = inst->hfi_session_ops;
+		u32 output_order = HFI_OUTPUT_ORDER_DECODE;
+
+		ret = hfi_ops->session_set_property(inst,
+						     HFI_PROPERTY_PARAM_VDEC_OUTPUT_ORDER,
+						     HFI_HOST_FLAGS_NONE, HFI_PORT_BITSTREAM,
+						     HFI_PAYLOAD_U32_ENUM, &output_order,
+						     sizeof(output_order));
+		if (ret) {
+			dev_err(inst->core->dev,
+				"Iris1: setting decode-order output failed: %d\n",
+				ret);
+			return ret;
+		}
+	}
 
 	ret = iris_alloc_and_queue_persist_bufs(inst, BUF_PERSIST);
 	if (ret)

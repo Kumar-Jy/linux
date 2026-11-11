@@ -5,8 +5,13 @@
 
 #include "drm/drm_bridge_connector.h"
 
+#include <drm/drm_atomic.h>
+#include <drm/drm_atomic_helper.h>
+
 #include "msm_kms.h"
 #include "dsi.h"
+#include "drm/drm_notifier.h"
+#include <linux/workqueue.h>
 
 #define DSI_CLOCK_MASTER	DSI_0
 #define DSI_CLOCK_SLAVE		DSI_1
@@ -275,6 +280,27 @@ static void dsi_mgr_bridge_power_off(struct drm_bridge *bridge)
 	dsi_mgr_phy_disable(id);
 }
 
+/* blank-notify deferral work to prevent KMS atomic commit deadlock */
+static struct work_struct dsi_blank_work;
+static bool dsi_blank_work_inited;
+
+static void dsi_blank_work_fn(struct work_struct *work)
+{
+	enum drm_notifier_data blank = MI_DRM_BLANK_UNBLANK;
+
+	mi_drm_notifier_call_chain(MI_DRM_EVENT_BLANK, &blank);
+}
+
+static void dsi_mgr_bridge_enable(struct drm_bridge *bridge,
+				  struct drm_atomic_commit *commit)
+{
+	if (!dsi_blank_work_inited) {
+		INIT_WORK(&dsi_blank_work, dsi_blank_work_fn);
+		dsi_blank_work_inited = true;
+	}
+	schedule_work(&dsi_blank_work);
+}
+
 static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge,
 				      struct drm_atomic_commit *commit)
 {
@@ -341,8 +367,12 @@ static void dsi_mgr_bridge_post_disable(struct drm_bridge *bridge,
 	struct mipi_dsi_host *host = msm_dsi->host;
 	bool is_bonded_dsi = IS_BONDED_DSI();
 	int ret;
+	enum drm_notifier_data notifier_data;
 
 	DBG("id=%d", id);
+
+	notifier_data = MI_DRM_BLANK_POWERDOWN;
+	mi_drm_notifier_call_chain(MI_DRM_EARLY_EVENT_BLANK, &notifier_data);
 
 	/*
 	 * Do nothing with the host if it is slave-DSI in case of bonded DSI.
@@ -452,6 +482,7 @@ static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
 	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
 	.attach = dsi_mgr_bridge_attach,
 	.atomic_pre_enable = dsi_mgr_bridge_pre_enable,
+	.atomic_enable = dsi_mgr_bridge_enable,
 	.atomic_post_disable = dsi_mgr_bridge_post_disable,
 	.mode_set = dsi_mgr_bridge_mode_set,
 	.mode_valid = dsi_mgr_bridge_mode_valid,
@@ -473,6 +504,7 @@ int msm_dsi_manager_connector_init(struct msm_dsi *msm_dsi,
 		return PTR_ERR(dsi_bridge);
 
 	dsi_bridge->id = msm_dsi->id;
+	msm_dsi->encoder = encoder;
 
 	bridge = &dsi_bridge->base;
 
@@ -496,7 +528,7 @@ int msm_dsi_manager_connector_init(struct msm_dsi *msm_dsi,
 int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
 {
 	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
-	struct msm_dsi *msm_dsi0 = dsi_mgr_get_dsi(DSI_0);
+	struct msm_dsi *msm_dsi1 = dsi_mgr_get_dsi(DSI_1);
 	struct mipi_dsi_host *host = msm_dsi->host;
 	bool is_read = (msg->rx_buf && msg->rx_len);
 	bool need_sync = (IS_SYNC_NEEDED() && !is_read);
@@ -507,14 +539,14 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
 
 	/* In bonded master case, panel requires the same commands sent to
 	 * both DSI links. Host issues the command trigger to both links
-	 * when DSI_1 calls the cmd transfer function, no matter it happens
-	 * before or after DSI_0 cmd transfer.
+	 * when DSI_0 calls the cmd transfer function, no matter it happens
+	 * before or after DSI_1 cmd transfer.
 	 */
-	if (need_sync && (id == DSI_0))
+	if (need_sync && (id == DSI_1))
 		return is_read ? msg->rx_len : msg->tx_len;
 
-	if (need_sync && msm_dsi0) {
-		ret = msm_dsi_host_xfer_prepare(msm_dsi0->host, msg);
+	if (need_sync && msm_dsi1) {
+		ret = msm_dsi_host_xfer_prepare(msm_dsi1->host, msg);
 		if (ret) {
 			pr_err("%s: failed to prepare non-trigger host, %d\n",
 				__func__, ret);
@@ -533,8 +565,8 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
 	msm_dsi_host_xfer_restore(host, msg);
 
 restore_host0:
-	if (need_sync && msm_dsi0)
-		msm_dsi_host_xfer_restore(msm_dsi0->host, msg);
+	if (need_sync && msm_dsi1)
+		msm_dsi_host_xfer_restore(msm_dsi1->host, msg);
 
 	return ret;
 }
@@ -542,19 +574,21 @@ restore_host0:
 bool msm_dsi_manager_cmd_xfer_trigger(int id, u32 dma_base, u32 len)
 {
 	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
-	struct msm_dsi *msm_dsi0 = dsi_mgr_get_dsi(DSI_0);
+	struct msm_dsi *msm_dsi1 = dsi_mgr_get_dsi(DSI_1);
 	struct mipi_dsi_host *host = msm_dsi->host;
 
-	if (IS_SYNC_NEEDED() && (id == DSI_0))
+	if (IS_SYNC_NEEDED() && (id == DSI_1))
 		return false;
 
-	if (IS_SYNC_NEEDED() && msm_dsi0)
-		msm_dsi_host_cmd_xfer_commit(msm_dsi0->host, dma_base, len);
+	if (IS_SYNC_NEEDED() && msm_dsi1)
+		msm_dsi_host_cmd_xfer_commit(msm_dsi1->host, dma_base, len);
 
 	msm_dsi_host_cmd_xfer_commit(host, dma_base, len);
 
 	return true;
 }
+
+static void dsi_mgr_dfps_sysfs_add(struct msm_dsi *msm_dsi);
 
 int msm_dsi_manager_register(struct msm_dsi *msm_dsi)
 {
@@ -587,6 +621,10 @@ int msm_dsi_manager_register(struct msm_dsi *msm_dsi)
 		goto fail;
 	}
 
+	/* expose the runtime refresh-rate knob on the master link */
+	if (id == msm_dsim->master_dsi_link_id)
+		dsi_mgr_dfps_sysfs_add(msm_dsi);
+
 	return 0;
 
 fail:
@@ -618,4 +656,240 @@ bool msm_dsi_is_master_dsi(struct msm_dsi *msm_dsi)
 const char *msm_dsi_get_te_source(struct msm_dsi *msm_dsi)
 {
 	return msm_dsi->te_source;
+}
+
+/**
+ * msm_dsi_manager_dfps_set() - change the panel refresh rate at runtime
+ * @new_fps: requested refresh rate in Hz
+ *
+ * Both links of a bonded DSI pair drive the same panel, so both controllers
+ * have to be reprogrammed. The controller-side work lives in
+ * msm_dsi_host_dfps_update().
+ *
+ * Return: 0 on success, negative errno otherwise.
+ */
+static int msm_dsi_manager_dfps_apply(struct msm_dsi *master,
+				      struct msm_dsi *slave, u32 fps, u32 cur_fps)
+{
+	int ret;
+
+	/*
+	 * Always move the DSI link first, then the DPU INTF.  Programming the
+	 * interface before the controller leaves the pipeline unable to lock
+	 * (measured: vsync collapses to ~3/s right after a 60 -> 120 switch,
+	 * and the panel shows a duplicated image).  The earlier
+	 * direction-dependent ordering did that on the shrink and is wrong.
+	 */
+	/*
+	 * Begin both links (shadow timing armed), move the DPU interface, then
+	 * commit both links.  This mirrors what the vendor gets for free by
+	 * doing the whole switch inside one commit: DSI and INTF always change
+	 * on the same frame.
+	 */
+	ret = msm_dsi_host_dfps_update(master->host, fps, IS_BONDED_DSI(), false);
+	if (ret)
+		return ret;
+
+	if (IS_BONDED_DSI() && slave && slave->host) {
+		ret = msm_dsi_host_dfps_update(slave->host, fps, true, false);
+		if (ret)
+			return ret;
+	}
+
+	if (msm_dfps_dpu_hook && master->encoder)
+		msm_dfps_dpu_hook(master->encoder, fps);
+
+	/* latch is deferred to msm_dsi_manager_dfps_latch() after kickoff */
+	return 0;
+}
+
+/*
+ * Latch the DSI timing programmed by msm_dsi_manager_dfps_commit_apply().
+ * Kept separate so it can run *after* commit_modeset_enables() (i.e. after
+ * the DPU kickoff): that is the vendor's post-kickoff ordering, and it is
+ * what stops the interface and the controller from disagreeing for one frame.
+ */
+/*
+ * Send the touch sync-pen between the kickoff and the DSI timing latch.
+ * Vendor does exactly this (sde_encoder_kickoff: kickoff -> pen -> later
+ * DB=0), so the DDIC learns about the new rate while the old timing is
+ * still in effect; doing it after DB=0 lets the panel process one frame
+ * with the new timings but the old internal state - the 60 -> 120 repeat.
+ */
+void msm_dsi_manager_dfps_pen(struct drm_device *dev, u32 fps)
+{
+	struct msm_dsi *master;
+
+	master = dsi_mgr_get_dsi(msm_dsim_glb.master_dsi_link_id);
+	if (!master || !master->host || !fps)
+		return;
+
+	msm_dsi_host_wait_vfp(master->host);
+
+	if (msm_dfps_sync_pen_hook)
+		msm_dfps_sync_pen_hook(fps);
+}
+
+void msm_dsi_manager_dfps_latch(struct drm_device *dev, u32 fps)
+{
+	struct msm_dsi *master;
+	struct msm_dsi *slave;
+
+	master = dsi_mgr_get_dsi(msm_dsim_glb.master_dsi_link_id);
+	if (!master || !master->host)
+		return;
+
+	slave = IS_BONDED_DSI() ?
+		dsi_mgr_get_other_dsi(msm_dsim_glb.master_dsi_link_id) : NULL;
+
+	msm_dsi_host_dfps_latch(master->host);
+	if (slave && slave->host)
+		msm_dsi_host_dfps_latch(slave->host);
+
+	(void)fps;
+}
+
+static int __maybe_unused msm_dsi_manager_dfps_set(u32 new_fps)
+{
+	struct msm_dsi *master;
+	struct msm_dsi *slave;
+	u32 cur_fps;
+
+	master = dsi_mgr_get_dsi(msm_dsim_glb.master_dsi_link_id);
+	if (!master || !master->host)
+		return -ENODEV;
+
+	slave = IS_BONDED_DSI() ?
+		dsi_mgr_get_other_dsi(msm_dsim_glb.master_dsi_link_id) : NULL;
+
+	cur_fps = msm_dsi_host_dfps_get_fps(master->host);
+	if (!cur_fps || cur_fps == new_fps)
+		return 0;
+
+	/*
+	 * One shot: the panel is a TDDI part and every intermediate timing is
+	 * a window in which the touch controller sees a frame it cannot
+	 * sync to, so stepping the change makes things worse, not better.
+	 */
+	return msm_dsi_manager_dfps_apply(master, slave, new_fps, cur_fps);
+}
+
+/*
+ * msm_dsi_manager_dfps_commit_apply() - apply a pending dfps change
+ * @dev: DRM device
+ * @fps: requested refresh rate
+ *
+ * Called from msm_atomic_commit_tail() after the planes have been programmed
+ * and before the flush goes out, so the DSI timing and the DPU interface
+ * timing are latched by the same commit instead of one frame apart. That
+ * one-frame skew is what the panel shows as a flash when going 60 -> 120.
+ */
+u32 msm_dsi_manager_dfps_commit_apply(struct drm_device *dev, u32 fps)
+{
+	struct msm_dsi *master;
+	struct msm_dsi *slave;
+	u32 cur_fps;
+
+	master = dsi_mgr_get_dsi(msm_dsim_glb.master_dsi_link_id);
+	if (!master || !master->host)
+		return 0;
+
+	slave = IS_BONDED_DSI() ?
+		dsi_mgr_get_other_dsi(msm_dsim_glb.master_dsi_link_id) : NULL;
+
+	cur_fps = msm_dsi_host_dfps_get_fps(master->host);
+	if (!cur_fps)
+		return 0;
+
+	if (cur_fps == fps) {
+		/*
+		 * Same rate: no timing change, but re-apply the touch sync
+		 * page anyway.  The DDIC forgets page 0x2A / reg 0x23 when it
+		 * is powered down on blank; echoing the current rate is the
+		 * cheapest way to put it back without a full dfps switch.
+		 */
+		msm_dsi_manager_dfps_pen(dev, fps);
+		return 0;
+	}
+
+	msm_dsi_manager_dfps_apply(master, slave, fps, cur_fps);
+
+	return fps;
+}
+
+static ssize_t dfps_store(struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t len)
+{
+	struct msm_dsi *msm_dsi = dev_get_drvdata(dev);
+	struct drm_device *drm_dev;
+	struct drm_atomic_commit *state;
+	struct drm_modeset_acquire_ctx ctx;
+	struct drm_crtc *crtc;
+	struct msm_drm_private *priv;
+	u32 fps, old_fps;
+	int ret;
+
+	ret = kstrtou32(buf, 10, &fps);
+	if (ret)
+		return ret;
+
+	if (!msm_dsi || !msm_dsi->dev)
+		return -ENODEV;
+
+	drm_dev = msm_dsi->dev;
+	priv = drm_dev->dev_private;
+	if (!priv || !priv->kms)
+		return -ENODEV;
+
+	old_fps = msm_dsi_host_dfps_get_fps(msm_dsi->host);
+
+	priv->kms->pending_dfps_fps = fps;
+
+	dev_info(dev, "dfps_store: id=%d requested %u Hz (from %u)\n",
+		 msm_dsi->id, fps, old_fps);
+
+	/*
+	 * Nothing else in the system changes, so build a commit of our own and
+	 * let msm_atomic_commit_tail() apply the pending rate while it holds
+	 * the CRTC locks and is about to flush.
+	 */
+	state = drm_atomic_commit_alloc(drm_dev);
+	if (!state)
+		return -ENOMEM;
+
+	drm_modeset_acquire_init(&ctx, 0);
+	state->acquire_ctx = &ctx;
+retry:
+	ret = drm_modeset_lock_all_ctx(drm_dev, &ctx);
+	if (!ret) {
+		struct drm_crtc_state *crtc_state;
+
+		drm_for_each_crtc(crtc, drm_dev) {
+			crtc_state = drm_atomic_get_crtc_state(state, crtc);
+			if (IS_ERR(crtc_state)) {
+				ret = PTR_ERR(crtc_state);
+				break;
+			}
+		}
+	}
+	if (!ret)
+		ret = drm_atomic_commit(state);
+	if (ret == -EDEADLK) {
+		drm_modeset_backoff(&ctx);
+		goto retry;
+	}
+
+	drm_modeset_drop_locks(&ctx);
+	drm_modeset_acquire_fini(&ctx);
+	drm_atomic_commit_put(state);
+
+	return ret ? ret : len;
+}
+static DEVICE_ATTR_WO(dfps);
+
+static void dsi_mgr_dfps_sysfs_add(struct msm_dsi *msm_dsi)
+{
+	if (device_create_file(&msm_dsi->pdev->dev, &dev_attr_dfps))
+		pr_warn("dsi%d: failed to create dfps sysfs entry\n",
+			msm_dsi->id);
 }

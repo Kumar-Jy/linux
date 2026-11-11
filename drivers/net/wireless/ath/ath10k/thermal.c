@@ -158,6 +158,18 @@ int ath10k_thermal_register(struct ath10k *ar)
 	struct device *hwmon_dev;
 	int ret;
 
+    /*
+     * HACK: For SM8150/WCN3990:
+     * The firmware advertises WMI_SERVICE_THERM_THROT, but hangs on read.
+     * On these platforms, thermal monitoring is handled by the system 
+     * thermal framework (TSENS) via Device Tree, so we can safely 
+     * disable the driver-internal thermal implementation.
+     */
+	if (ar->hif.bus == ATH10K_BUS_SNOC &&
+	    test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map)) {
+		clear_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map);
+	}
+
 	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
 		return 0;
 

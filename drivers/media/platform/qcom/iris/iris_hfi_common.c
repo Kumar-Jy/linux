@@ -79,6 +79,17 @@ int iris_hfi_core_init(struct iris_core *core)
 	const struct iris_hfi_sys_ops *hfi_ops = core->hfi_sys_ops;
 	int ret;
 
+	/*
+	 * Wait for the VPU5 SYS_INIT response before sending any further
+	 * command. The downstream Venus driver sends its default system
+	 * properties later, immediately before SESSION_INIT.
+	 */
+	if (core->iris_platform_data->legacy_vpu5) {
+		dev_dbg(core->dev,
+			"Iris1: sending SYS_INIT through legacy HFI queue\n");
+		return hfi_ops->sys_init(core);
+	}
+
 	ret = hfi_ops->sys_init(core);
 	if (ret)
 		return ret;
@@ -92,7 +103,12 @@ int iris_hfi_core_init(struct iris_core *core)
 
 irqreturn_t iris_hfi_isr(int irq, void *data)
 {
+	struct iris_core *core = data;
+
 	disable_irq_nosync(irq);
+
+	if (core && core->iris_platform_data->legacy_vpu5)
+		iris_vpu_clear_interrupt(core);
 
 	return IRQ_WAKE_THREAD;
 }
@@ -106,7 +122,8 @@ irqreturn_t iris_hfi_isr_handler(int irq, void *data)
 
 	mutex_lock(&core->lock);
 	pm_runtime_mark_last_busy(core->dev);
-	iris_vpu_clear_interrupt(core);
+	if (!core->iris_platform_data->legacy_vpu5)
+		iris_vpu_clear_interrupt(core);
 	mutex_unlock(&core->lock);
 
 	if (core->hfi_sys_ops)
@@ -121,6 +138,9 @@ irqreturn_t iris_hfi_isr_handler(int irq, void *data)
 int iris_hfi_pm_suspend(struct iris_core *core)
 {
 	int ret;
+
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
 
 	ret = iris_vpu_prepare_pc(core);
 	if (ret) {
@@ -148,6 +168,9 @@ int iris_hfi_pm_resume(struct iris_core *core)
 	const struct vpu_ops *vpu_ops = core->iris_platform_data->vpu_ops;
 	const struct iris_hfi_sys_ops *ops = core->hfi_sys_ops;
 	int ret;
+
+	if (core->iris_platform_data->legacy_vpu5)
+		return 0;
 
 	ret = iris_vpu_power_on(core);
 	if (ret)

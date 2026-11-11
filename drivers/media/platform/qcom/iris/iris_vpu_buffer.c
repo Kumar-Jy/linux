@@ -2586,6 +2586,8 @@ static inline int iris_vpu_dpb_count(struct iris_inst *inst)
 		return 11;
 
 	if (iris_split_mode_enabled(inst)) {
+		if (!inst->fw_min_count && inst->core->iris_platform_data->legacy_vpu5)
+			return VIDEO_MAX_FRAME;
 		return inst->fw_min_count ?
 			inst->fw_min_count : inst->buffers[BUF_OUTPUT].min_count;
 	}

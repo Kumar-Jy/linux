@@ -66,6 +66,7 @@ extern const struct iris_platform_data milos_data;
 extern const struct iris_platform_data qcm2290_data;
 extern const struct iris_platform_data qcs8300_data;
 extern const struct iris_platform_data sc7280_data;
+extern const struct iris_platform_data sm8150_data;
 extern const struct iris_platform_data sm8250_data;
 extern const struct iris_platform_data sm8550_data;
 extern const struct iris_platform_data sm8650_data;
@@ -86,6 +87,8 @@ enum platform_clk_type {
 	IRIS_VPP1_HW_CLK,
 	IRIS_APV_HW_CLK,
 	IRIS_THROTTLE_CLK,
+	IRIS_AUX_HW_CLK,
+	IRIS_AUX_HW_AHB_CLK,
 };
 
 struct platform_clk_data {
@@ -259,6 +262,7 @@ struct icc_vote_data {
 enum platform_pm_domain_type {
 	IRIS_CTRL_POWER_DOMAIN,
 	IRIS_HW_POWER_DOMAIN,
+	IRIS_AUX_HW_POWER_DOMAIN,
 	IRIS_VPP0_HW_POWER_DOMAIN,
 	IRIS_VPP1_HW_POWER_DOMAIN,
 	IRIS_APV_HW_POWER_DOMAIN,
@@ -350,6 +354,7 @@ struct iris_platform_data {
 	bool no_rpmh;
 	u32 wd_intr_mask;
 	u32 icc_ib_multiplier;
+	bool legacy_vpu5;
 	u32 max_session_count;
 	/* max number of macroblocks per frame supported */
 	u32 max_core_mbpf;

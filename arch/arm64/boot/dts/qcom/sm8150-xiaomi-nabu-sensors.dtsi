@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Xiaomi Pad 5 (nabu) SLPI sensors support.
+ */
+
+&remoteproc_slpi {
+	firmware-name = "qcom/sm8150/xiaomi/nabu/slpi_nb.mbn";
+	status = "okay";
+
+	glink-edge {
+		fastrpc {
+			qcom,protection-domain = "tms/servreg", "msm/slpi/root_pd";
+
+			compute-cb@1 {
+				dma-coherent;
+			};
+
+			compute-cb@2 {
+				dma-coherent;
+			};
+
+			compute-cb@3 {
+				dma-coherent;
+			};
+		};
+	};
+};

@@ -358,6 +358,9 @@ static int iris_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_vdev_unreg_enc;
 
+	if (core->iris_platform_data->legacy_vpu5)
+		pm_runtime_forbid(core->dev);
+
 	return 0;
 
 err_vdev_unreg_enc:
@@ -433,6 +436,14 @@ static const struct of_device_id iris_dt_match[] = {
 	{
 		.compatible = "qcom,sc7280-venus",
 		.data = &sc7280_data,
+	},
+	{
+		.compatible = "qcom,sm8150-iris",
+		.data = &sm8150_data,
+	},
+	{
+		.compatible = "qcom,sm8150-venus",
+		.data = &sm8150_data,
 	},
 	{
 		.compatible = "qcom,sm8250-venus",

@@ -102,6 +102,15 @@ patternProperties:
           which can be disabled to suppress events from the button.
         type: boolean
 
+      linux,notify-chain:
+        description:
+          Indicates that this switch button should fire a kernel notifier
+          chain callback when its state changes. This is useful for kernel
+          subsystems that need direct notification of cover open/close events
+          (e.g. SW_LID). Callbacks are registered via
+          gpio_keys_lid_notifier_register().
+        type: boolean
+
     required:
       - linux,code
 

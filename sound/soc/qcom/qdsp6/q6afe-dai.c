@@ -377,8 +377,14 @@ static void q6afe_dai_shutdown(struct snd_pcm_substream *substream,
 		return;
 
 	rc = q6afe_port_stop(dai_data->port[dai->id]);
-	if (rc < 0)
+	if (rc < 0) {
 		dev_err(dai->dev, "fail to close AFE port (%d)\n", rc);
+		/* Keep is_port_started set: the DSP may still be running the
+		 * port, and clearing the flag here would make every later
+		 * prepare() skip the stop and hit ADSP_EALREADY forever.
+		 */
+		return;
+	}
 
 	dai_data->is_port_started[dai->id] = false;
 
@@ -397,6 +403,7 @@ static int q6afe_dai_prepare(struct snd_pcm_substream *substream,
 			dev_err(dai->dev, "fail to close AFE port (%d)\n", rc);
 			return rc;
 		}
+		dai_data->is_port_started[dai->id] = false;
 	}
 
 	switch (dai->id) {
@@ -439,6 +446,17 @@ static int q6afe_dai_prepare(struct snd_pcm_substream *substream,
 	}
 
 	rc = q6afe_port_start(dai_data->port[dai->id]);
+	if (rc == -EALREADY) {
+		/* The DSP still runs this port while our flag says stopped
+		 * (a previous DEVICE_STOP was acked but never took effect).
+		 * Force one more stop and retry, otherwise the port stays
+		 * unusable until the ADSP is rebooted.
+		 */
+		dev_warn(dai->dev, "AFE port %x already running, resyncing\n",
+			 dai->id);
+		q6afe_port_stop(dai_data->port[dai->id]);
+		rc = q6afe_port_start(dai_data->port[dai->id]);
+	}
 	if (rc < 0) {
 		dev_err(dai->dev, "fail to start AFE port %x\n", dai->id);
 		return rc;

@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/power/supply/qcom,pm8150b-bms.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Qualcomm Unified Battery/Charger Manager
+
+maintainers:
+  - TwinbornPlate75 <3342733415@qq.com>
+
+description: |
+  The Qualcomm unified battery/charger manager is a virtual coordinator
+  that aggregates the Qualcomm fuel gauge, PMIC charger, and optional
+  direct chargers into user-facing qcom-battery and qcom-usb power
+  supplies.  It does not own any hardware registers itself; the actual
+  battery, charger and direct-charge devices are described by their own
+  DT nodes and registered with the coordinator at runtime.
+
+allOf:
+  - $ref: power-supply.yaml#
+
+properties:
+  compatible:
+    const: qcom,pm8150b-bms
+
+  qcom,required-authenticators:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 0
+    maximum: 3
+    default: 0
+    description: |
+      Bit mask of battery authenticators which must pass before high-current
+      charging is allowed. Bit 0 is primary and bit 1 is secondary.
+
+  status:
+    description: Standard device status property.
+
+required:
+  - compatible
+
+additionalProperties: false
+
+examples:
+  - |
+    battery-manager {
+        compatible = "qcom,pm8150b-bms";
+        qcom,required-authenticators = <3>;
+        status = "okay";
+    };

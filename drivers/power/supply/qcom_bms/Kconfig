@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Qualcomm power supply drivers
+#
+
+config QCOM_BMS
+	tristate "Qualcomm unified battery/charger manager"
+	depends on OF
+	depends on MFD_SPMI_PMIC
+	depends on IIO
+	depends on POWER_SUPPLY
+	help
+	  Aggregates the Qualcomm fuel gauge, PMIC charger, and direct
+	  chargers into the unified qcom-bms / qcom-bms-usb power supplies.
+
+config QCOM_BMS_LN8000
+	tristate "LION Semiconductor LN8000 direct charger"
+	depends on QCOM_BMS
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  Enable support for the LN8000 switched-capacitor direct charger.
+
+	  If unsure, say N.
+
+config QCOM_BMS_DS28E16
+	tristate "Maxim DS28E16 Xiaomi battery authentication"
+	depends on QCOM_BMS
+	depends on GPIOLIB
+	select CRYPTO_HMAC
+	select CRYPTO_SHA3
+	select CRC8
+	select CRC16
+	help
+	  Maxim DS28E16 1-Wire authenticators.

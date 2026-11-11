@@ -487,8 +487,24 @@ static void iris_fill_internal_buf_info(struct iris_inst *inst,
 					enum iris_buffer_type buffer_type)
 {
 	struct iris_buffers *buffers = &inst->buffers[buffer_type];
+	bool exact_firmware_size;
+	u32 calculated_size;
 
-	buffers->size = inst->core->iris_firmware_desc->get_vpu_buffer_size(inst, buffer_type);
+	calculated_size = inst->core->iris_firmware_desc->get_vpu_buffer_size(inst, buffer_type);
+	exact_firmware_size = inst->domain == DECODER &&
+		inst->core->iris_platform_data->legacy_vpu5 &&
+		inst->fw_buffer_sizes[buffer_type];
+
+	if (exact_firmware_size) {
+		buffers->size = inst->fw_buffer_sizes[buffer_type];
+		if (buffers->size != calculated_size)
+			dev_dbg(inst->core->dev,
+				"Iris1: buffer type %u using exact firmware size %u instead of calculated %u\n",
+				buffer_type, buffers->size, calculated_size);
+	} else {
+		buffers->size = max(calculated_size,
+				    inst->fw_buffer_sizes[buffer_type]);
+	}
 	buffers->min_count = iris_vpu_buf_count(inst, buffer_type);
 }
 
@@ -543,7 +559,7 @@ static int iris_create_internal_buffer(struct iris_inst *inst,
 
 	INIT_LIST_HEAD(&buffer->list);
 	buffer->type = buffer_type;
-	buffer->index = index;
+	buffer->index = (buffer_type == BUF_DPB) ? (VIDEO_MAX_FRAME + index) : index;
 	buffer->buffer_size = buffers->size;
 	buffer->dma_attrs = DMA_ATTR_WRITE_COMBINE | DMA_ATTR_NO_KERNEL_MAPPING;
 

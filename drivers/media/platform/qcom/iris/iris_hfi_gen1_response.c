@@ -79,7 +79,8 @@ static void iris_hfi_gen1_read_changed_params(struct iris_inst *inst,
 		case HFI_PROPERTY_CONFIG_BUFFER_REQUIREMENTS:
 			data_ptr += sizeof(u32);
 			bufreq = (struct hfi_buffer_requirements *)data_ptr;
-			event.buf_count = bufreq->count_min;
+			event.buf_count = inst->core->iris_platform_data->legacy_vpu5 ?
+					  bufreq->hold_count : bufreq->count_min;
 			data_ptr += sizeof(*bufreq);
 			break;
 		case HFI_INDEX_EXTRADATA_INPUT_CROP:
@@ -578,6 +579,7 @@ static void iris_hfi_gen1_session_buffer_requirements(struct iris_inst *inst,
 		/* on relevant platforms hold_count and min_count are swapped */
 		inst->buffers[type].min_count = req->hold_count;
 		inst->buffers[type].size = req->size;
+		inst->fw_buffer_sizes[type] = max(inst->fw_buffer_sizes[type], req->size);
 
 		if (type == BUF_OUTPUT)
 			inst->fw_min_count = req->count_actual;
@@ -605,6 +607,7 @@ static void iris_hfi_gen1_session_property_info(struct iris_inst *inst, void *pa
 
 out:
 	complete(&inst->completion);
+}
 }
 
 struct iris_hfi_gen1_response_pkt_info {
@@ -652,6 +655,10 @@ static const struct iris_hfi_gen1_response_pkt_info pkt_infos[] = {
 	{
 	 .pkt = HFI_MSG_SESSION_FILL_BUFFER,
 	 .pkt_sz = sizeof(struct hfi_msg_session_fbd_compressed_pkt),
+	},
+	{
+	 .pkt = HFI_MSG_SESSION_PROPERTY_INFO,
+	 .pkt_sz = sizeof(struct hfi_msg_session_property_info_pkt),
 	},
 	{
 	 .pkt = HFI_MSG_SESSION_FLUSH,
@@ -737,8 +744,11 @@ static void iris_hfi_gen1_handle_response(struct iris_core *core, void *response
 			struct hfi_msg_session_hdr_pkt *shdr;
 
 			shdr = (struct hfi_msg_session_hdr_pkt *)hdr;
-			if (shdr->error_type != HFI_ERR_NONE)
+			if (shdr->error_type != HFI_ERR_NONE) {
+				dev_err(dev, "Iris1 session response: type=%#x session=%#x error=%#x\n",
+					hdr->pkt_type, pkt->shdr.session_id, shdr->error_type);
 				iris_inst_change_state(inst, IRIS_INST_ERROR);
+			}
 
 			if (pkt_info->pkt == HFI_MSG_SESSION_FLUSH) {
 				if (!(--inst->flush_responses_pending))
@@ -764,8 +774,14 @@ static void iris_hfi_gen1_flush_debug_queue(struct iris_core *core, u8 *packet)
 		if (pkt->hdr.pkt_type != HFI_MSG_SYS_COV) {
 			struct hfi_msg_sys_debug_pkt *pkt =
 				(struct hfi_msg_sys_debug_pkt *)packet;
+			u32 msg_size;
 
-			dev_dbg(core->dev, "%s", pkt->msg_data);
+			if (pkt->hdr.size <= sizeof(*pkt))
+				continue;
+			msg_size = min_t(u32, pkt->msg_size,
+					 pkt->hdr.size - sizeof(*pkt));
+			dev_dbg(core->dev, "Iris1 FW DBG: %.*s\n",
+				(int)msg_size, pkt->msg_data);
 		}
 	}
 }

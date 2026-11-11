@@ -17,6 +17,7 @@
 #include <linux/profile.h>
 #include <linux/sched.h>
 #include <linux/module.h>
+#include <linux/suspend.h>
 #include <trace/events/power.h>
 
 #include <asm/irq_regs.h>
@@ -537,6 +538,7 @@ void tick_freeze(void)
 		 */
 		lock_map_acquire_try(&tick_freeze_map);
 		system_state = SYSTEM_SUSPEND;
+		pm_s2idle_grace_start();
 		sched_clock_suspend();
 		timekeeping_suspend();
 		lock_map_release(&tick_freeze_map);
@@ -567,6 +569,7 @@ void tick_unfreeze(void)
 		 * tick_freeze_lock.
 		 */
 		lock_map_acquire_try(&tick_freeze_map);
+		pm_s2idle_grace_end();
 		timekeeping_resume();
 		sched_clock_resume();
 		lock_map_release(&tick_freeze_map);

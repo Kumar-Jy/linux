@@ -152,6 +152,8 @@ extern suspend_state_t mem_sleep_default;
  * @ops: The new suspend operations to set.
  */
 extern void suspend_set_ops(const struct platform_suspend_ops *ops);
+extern int suspend_set_ops_if_unused(const struct platform_suspend_ops *ops);
+extern bool suspend_ops_is_set(void);
 extern int suspend_valid_only_mem(suspend_state_t state);
 
 extern unsigned int pm_suspend_global_flags;
@@ -256,6 +258,18 @@ extern void __init pm_states_init(void);
 extern void s2idle_set_ops(const struct platform_s2idle_ops *ops);
 extern void s2idle_wake(void);
 
+/*
+ * s2idle freeze-transition grace period.  A platform may opt one known-bad
+ * wake IRQ into this window when an electrical edge is generated while the
+ * last CPU freezes timekeeping.  Only that IRQ is passed to its regular
+ * handler instead of aborting s2idle; all other wake IRQs retain their normal
+ * behaviour.
+ */
+extern void pm_s2idle_grace_start(void);
+extern void pm_s2idle_grace_end(void);
+extern void pm_s2idle_set_wake_irq(int irq);
+extern bool pm_s2idle_grace_ignore_wakeup_irq(unsigned int irq);
+
 /**
  * arch_suspend_disable_irqs - disable IRQs for suspend
  *
@@ -290,12 +304,18 @@ static inline bool pm_suspend_no_platform(void) { return false; }
 static inline bool pm_suspend_default_s2idle(void) { return false; }
 
 static inline void suspend_set_ops(const struct platform_suspend_ops *ops) {}
+static inline int suspend_set_ops_if_unused(const struct platform_suspend_ops *ops) { return -ENOSYS; }
+static inline bool suspend_ops_is_set(void) { return false; }
 static inline int pm_suspend(suspend_state_t state) { return -ENOSYS; }
 static inline bool sync_on_suspend_enabled(void) { return true; }
 static inline bool idle_should_enter_s2idle(void) { return false; }
 static inline void __init pm_states_init(void) {}
 static inline void s2idle_set_ops(const struct platform_s2idle_ops *ops) {}
 static inline void s2idle_wake(void) {}
+static inline void pm_s2idle_grace_start(void) {}
+static inline void pm_s2idle_grace_end(void) {}
+static inline void pm_s2idle_set_wake_irq(int irq) {}
+static inline bool pm_s2idle_grace_ignore_wakeup_irq(unsigned int irq) { return false; }
 #endif /* !CONFIG_SUSPEND */
 
 static inline bool pm_suspend_in_progress(void)

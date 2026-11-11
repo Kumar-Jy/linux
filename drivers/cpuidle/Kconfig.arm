@@ -43,6 +43,29 @@ config ARM_PSCI_CPUIDLE_DOMAIN
 	  which is needed to support the hierarchical DT based layout of the
 	  idle states.
 
+config ARM_PSCI_CPUIDLE_SUSPEND
+	bool "PSCI OSI-based PM_SUSPEND_MEM backend"
+	depends on ARM_PSCI_CPUIDLE_DOMAIN
+	depends on SUSPEND
+	default y
+	help
+	  Register a platform_suspend_ops backend that drives PM_SUSPEND_MEM
+	  ("echo mem > /sys/power/state") through the same PSCI OSI cluster
+	  collapse path the hierarchical cpuidle driver uses, by reusing the
+	  cluster suspend-param already stamped into psci_domain_state by the
+	  cpuidle syscore op.
+
+	  Useful on platforms whose firmware does not implement
+	  PSCI_FN_NATIVE(1_0, SYSTEM_SUSPEND) -- most upstream Qualcomm SoCs:
+	  sm8150, sdm845, sm8250, sc7180, sc8280xp.  Without this option the
+	  only available system sleep state on such platforms is s2idle.
+
+	  If firmware does implement SYSTEM_SUSPEND the canonical PSCI
+	  backend in drivers/firmware/psci/psci.c wins and this driver is a
+	  no-op.
+
+	  If unsure, say Y.
+
 config ARM_BIG_LITTLE_CPUIDLE
 	bool "Support for ARM big.LITTLE processors"
 	depends on ARCH_VEXPRESS_TC2_PM || ARCH_EXYNOS || COMPILE_TEST

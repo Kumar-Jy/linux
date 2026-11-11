@@ -3,9 +3,12 @@
  * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/pm_opp.h>
+#include <linux/pm_runtime.h>
 #include <linux/reset.h>
+#include <linux/soc/qcom/llcc-qcom.h>
 
 #include "iris_core.h"
 #include "iris_instance.h"
@@ -14,6 +17,31 @@
 
 #define AON_WRAPPER_MVP_VIDEO_CTL_NOC_LPI_CONTROL	(AON_BASE_OFFS + 0x2C)
 #define AON_WRAPPER_MVP_VIDEO_CTL_NOC_LPI_STATUS	(AON_BASE_OFFS + 0x30)
+
+#define VPU5_CPU_CS_BASE_OFFS			0x000D2000
+#define VPU5_CPU_IC_BASE_OFFS			0x000DF000
+#define VPU5_WRAPPER_BASE_OFFS			0x000E0000
+
+static inline bool iris_vpu_uses_legacy_vpu5(struct iris_core *core)
+{
+	return core->iris_platform_data->legacy_vpu5;
+}
+
+static inline u32 iris_vpu_cpu_cs_base(struct iris_core *core)
+{
+	if (iris_vpu_uses_legacy_vpu5(core))
+		return VPU5_CPU_CS_BASE_OFFS;
+
+	return CPU_CS_BASE_OFFS;
+}
+
+static inline u32 iris_vpu_wrapper_base(struct iris_core *core)
+{
+	if (iris_vpu_uses_legacy_vpu5(core))
+		return VPU5_WRAPPER_BASE_OFFS;
+
+	return WRAPPER_BASE_OFFS;
+}
 
 #define CTRL_INIT				(CPU_CS_BASE_OFFS + 0x48)
 #define CTRL_STATUS				(CPU_CS_BASE_OFFS + 0x4C)
@@ -33,38 +61,67 @@
 
 void iris_vpu_interrupt_init(struct iris_core *core)
 {
+	u32 wrapper_base = iris_vpu_wrapper_base(core);
 	u32 mask_val;
 
-	mask_val = readl(core->reg_base + WRAPPER_INTR_MASK);
-	mask_val &= ~(WRAPPER_INTR_MASK_A2HWD_BMSK |
-		      WRAPPER_INTR_MASK_A2HCPU_BMSK);
-	writel(mask_val, core->reg_base + WRAPPER_INTR_MASK);
+	if (iris_vpu_uses_legacy_vpu5(core)) {
+		/*
+		 * Iris1 masks reserved interrupt sources at reset. Unmask only
+		 * the normal A2H CPU interrupt and keep the firmware watchdog
+		 * (BIT(4)) masked, as an uncleared level interrupt would stall
+		 * the host CPU.
+		 */
+		mask_val = readl(core->reg_base + wrapper_base + 0x10);
+		mask_val &= ~BIT(2);
+		mask_val |= BIT(4);
+	} else {
+		mask_val = readl(core->reg_base + wrapper_base + 0x10);
+		mask_val &= ~(WRAPPER_INTR_MASK_A2HWD_BMSK |
+			      WRAPPER_INTR_MASK_A2HCPU_BMSK);
+	}
+	writel(mask_val, core->reg_base + wrapper_base + 0x10);
 }
 
 static void iris_vpu_setup_ucregion_memory_map(struct iris_core *core)
 {
-	u32 queue_size, value;
+	u32 cpu_cs_base = iris_vpu_cpu_cs_base(core);
+	u32 queue_size, region_size, value;
 	const struct vpu_ops *vpu_ops = core->iris_platform_data->vpu_ops;
 
-	/* Iris hardware requires 4K queue alignment */
-	queue_size = ALIGN(sizeof(struct iris_hfi_queue_table_header) +
-		(IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+	if (iris_vpu_uses_legacy_vpu5(core))
+		queue_size = ALIGN(sizeof(struct iris_hfi_legacy_queue_table_header) +
+			(IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+	else
+		queue_size = ALIGN(sizeof(struct iris_hfi_queue_table_header) +
+			(IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
 
 	value = (u32)core->iface_q_table_daddr;
-	writel(value, core->reg_base + UC_REGION_ADDR);
+	writel(value, core->reg_base + cpu_cs_base + 0x64);
 
 	/* Iris hardware requires 1M queue alignment */
-	value = ALIGN(SFR_SIZE + queue_size, SZ_1M);
-	writel(value, core->reg_base + UC_REGION_SIZE);
+	region_size = ALIGN(SFR_SIZE + queue_size, SZ_1M);
+	writel(region_size, core->reg_base + cpu_cs_base + 0x68);
 
 	value = (u32)core->iface_q_table_daddr;
-	writel(value, core->reg_base + QTBL_ADDR);
+	writel(value, core->reg_base + cpu_cs_base + 0x54);
 
-	writel(QTBL_ENABLE, core->reg_base + QTBL_INFO);
+	writel(QTBL_ENABLE, core->reg_base + cpu_cs_base + 0x50);
+
+	if (iris_vpu_uses_legacy_vpu5(core)) {
+		/*
+		 * Iris1 has a second HFI queue view for its DSP. Qualcomm's
+		 * downstream SM8150 driver initializes it with the CPU queues
+		 * by default even when CVP is unused.
+		 */
+		value = (u32)core->iface_q_table_daddr;
+		writel(value, core->reg_base + cpu_cs_base + 0x34);
+		writel(value, core->reg_base + cpu_cs_base + 0x38);
+		writel(region_size, core->reg_base + cpu_cs_base + 0x3c);
+	}
 
 	if (core->sfr_daddr) {
 		value = (u32)core->sfr_daddr + core->iris_firmware_data->core_arch;
-		writel(value, core->reg_base + SFR_ADDR);
+		writel(value, core->reg_base + cpu_cs_base + 0x5c);
 	}
 
 	if (vpu_ops->program_bootup_registers)
@@ -73,15 +130,17 @@ static void iris_vpu_setup_ucregion_memory_map(struct iris_core *core)
 
 int iris_vpu_boot_firmware(struct iris_core *core)
 {
+	u32 cpu_cs_base = iris_vpu_cpu_cs_base(core);
 	u32 ctrl_init = BIT(0), ctrl_status = 0, count = 0, max_tries = 1000;
 
 	iris_vpu_setup_ucregion_memory_map(core);
 
-	writel(ctrl_init, core->reg_base + CTRL_INIT);
-	writel(0x1, core->reg_base + CPU_CS_SCIACMDARG3);
+	writel(ctrl_init, core->reg_base + cpu_cs_base + 0x48);
+	if (!iris_vpu_uses_legacy_vpu5(core))
+		writel(0x1, core->reg_base + cpu_cs_base + 0x58);
 
 	while (!ctrl_status && count < max_tries) {
-		ctrl_status = readl(core->reg_base + CTRL_STATUS);
+		ctrl_status = readl(core->reg_base + cpu_cs_base + 0x4c);
 		if ((ctrl_status & CTRL_ERROR_STATUS__M) == 0x4) {
 			dev_err(core->dev, "invalid setting for uc_region\n");
 			return -EINVAL;
@@ -96,38 +155,52 @@ int iris_vpu_boot_firmware(struct iris_core *core)
 		return -ETIME;
 	}
 
-	writel(HOST2XTENSA_INTR_ENABLE, core->reg_base + CPU_CS_H2XSOFTINTEN);
+	if (iris_vpu_uses_legacy_vpu5(core))
+		return 0;
+
+	writel(HOST2XTENSA_INTR_ENABLE, core->reg_base + cpu_cs_base + 0x148);
 	if (!core->iris_platform_data->no_rpmh)
-		writel(0x0, core->reg_base + CPU_CS_X2RPMH);
+		writel(0x0, core->reg_base + cpu_cs_base + 0x168);
 
 	return 0;
 }
 
 void iris_vpu_raise_interrupt(struct iris_core *core)
 {
-	writel(1 << CPU_IC_SOFTINT_H2A_SHFT, core->reg_base + CPU_IC_SOFTINT);
+	if (iris_vpu_uses_legacy_vpu5(core))
+		writel(BIT(15), core->reg_base + VPU5_CPU_IC_BASE_OFFS + 0x18);
+	else
+		writel(1 << CPU_IC_SOFTINT_H2A_SHFT, core->reg_base + CPU_IC_SOFTINT);
 }
 
 void iris_vpu_clear_interrupt(struct iris_core *core)
 {
+	u32 cpu_cs_base = iris_vpu_cpu_cs_base(core);
+	u32 wrapper_base = iris_vpu_wrapper_base(core);
 	u32 wd_intr_mask = core->iris_platform_data->wd_intr_mask;
 	u32 intr_status, mask;
 
-	intr_status = readl(core->reg_base + WRAPPER_INTR_STATUS);
-	mask = (WRAPPER_INTR_STATUS_A2H_BMSK | wd_intr_mask |
-		CTRL_INIT_IDLE_MSG_BMSK);
+	intr_status = readl(core->reg_base + wrapper_base + 0x0c);
+	mask = BIT(2) | CTRL_INIT_IDLE_MSG_BMSK;
+	if (iris_vpu_uses_legacy_vpu5(core))
+		mask |= BIT(4);
+	else
+		mask |= wd_intr_mask ? : BIT(3);
 
 	if (intr_status & mask)
 		core->intr_status |= intr_status;
 
-	writel(CLEAR_XTENSA2HOST_INTR, core->reg_base + CPU_CS_A2HSOFTINTCLR);
+	writel(CLEAR_XTENSA2HOST_INTR, core->reg_base + cpu_cs_base + 0x1c);
+	if (iris_vpu_uses_legacy_vpu5(core))
+		writel(intr_status, core->reg_base + wrapper_base + 0x14);
 }
 
 int iris_vpu_watchdog(struct iris_core *core, u32 intr_status)
 {
-	u32 wd_intr_mask = core->iris_platform_data->wd_intr_mask;
+	u32 watchdog_mask = iris_vpu_uses_legacy_vpu5(core) ? BIT(4) :
+			    (core->iris_platform_data->wd_intr_mask ? : WRAPPER_INTR_STATUS_A2HWD_BMSK);
 
-	if (intr_status & wd_intr_mask) {
+	if (intr_status & watchdog_mask) {
 		dev_err(core->dev, "received watchdog interrupt\n");
 		return -ETIME;
 	}
@@ -140,6 +213,9 @@ int iris_vpu_prepare_pc(struct iris_core *core)
 	u32 wfi_status, idle_status, pc_ready;
 	u32 ctrl_status, val = 0;
 	int ret;
+
+	if (iris_vpu_uses_legacy_vpu5(core))
+		return -EAGAIN;
 
 	ctrl_status = readl(core->reg_base + CTRL_STATUS);
 	pc_ready = ctrl_status & CTRL_STATUS_PC_READY;
@@ -225,7 +301,8 @@ disable_power:
 
 void iris_vpu_power_off_hw(struct iris_core *core)
 {
-	dev_pm_genpd_set_hwmode(core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN], false);
+	if (!iris_vpu_uses_legacy_vpu5(core))
+		dev_pm_genpd_set_hwmode(core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN], false);
 	iris_disable_unprepare_clock(core, IRIS_BSE_HW_CLK);
 	iris_disable_unprepare_clock(core, IRIS_HW_AHB_CLK);
 	iris_disable_unprepare_clock(core, IRIS_HW_CLK);
@@ -234,8 +311,22 @@ void iris_vpu_power_off_hw(struct iris_core *core)
 
 void iris_vpu_power_off(struct iris_core *core)
 {
-	iris_opp_set_rate(core->dev, 0);
+	int i;
+
+	if (core->llcc_active) {
+		for (i = ARRAY_SIZE(core->llcc_slices) - 1; i >= 0; i--) {
+			if (core->llcc_slices[i]) {
+				llcc_slice_deactivate(core->llcc_slices[i]);
+				llcc_slice_putd(core->llcc_slices[i]);
+				core->llcc_slices[i] = NULL;
+			}
+		}
+		core->llcc_active = false;
+		core->syscache_set = false;
+	}
+
 	core->iris_platform_data->vpu_ops->power_off_hw(core);
+	iris_opp_set_rate(core->dev, 0);
 	core->iris_platform_data->vpu_ops->power_off_controller(core);
 	iris_unset_icc_bw(core);
 
@@ -312,8 +403,142 @@ err_disable_power:
 	return ret;
 }
 
+int iris_vpu5_power_on_controller(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_CTRL_POWER_DOMAIN];
+	u32 rst_tbl_size = core->iris_platform_data->clk_rst_tbl_size;
+	int ret, i;
+
+	ret = pm_runtime_resume_and_get(pd_dev);
+	if (ret < 0)
+		return ret;
+
+	for (i = 0; i < rst_tbl_size; i++) {
+		ret = reset_control_assert(core->resets[i].rstc);
+		if (ret)
+			goto err_disable_power;
+		usleep_range(150, 250);
+		ret = reset_control_deassert(core->resets[i].rstc);
+		if (ret)
+			goto err_disable_power;
+	}
+
+	ret = iris_prepare_enable_clock(core, IRIS_AXI1_CLK);
+	if (ret)
+		goto err_disable_power;
+
+	ret = iris_prepare_enable_clock(core, IRIS_AXI_CLK);
+	if (ret)
+		goto err_disable_bus_clock;
+
+	ret = iris_prepare_enable_clock(core, IRIS_CTRL_CLK);
+	if (ret)
+		goto err_disable_axi_clock;
+
+	return 0;
+
+err_disable_axi_clock:
+	iris_disable_unprepare_clock(core, IRIS_AXI_CLK);
+err_disable_bus_clock:
+	iris_disable_unprepare_clock(core, IRIS_AXI1_CLK);
+err_disable_power:
+	pm_runtime_put_sync(pd_dev);
+	return ret;
+}
+
+int iris_vpu5_power_off_controller(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_CTRL_POWER_DOMAIN];
+
+	iris_disable_unprepare_clock(core, IRIS_CTRL_CLK);
+	iris_disable_unprepare_clock(core, IRIS_AXI_CLK);
+	iris_disable_unprepare_clock(core, IRIS_AXI1_CLK);
+	pm_runtime_put_sync(pd_dev);
+
+	return 0;
+}
+
+int iris_vpu5_power_on_hw(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN];
+	struct device *aux_pd_dev = NULL;
+	int ret;
+
+	if (core->pmdomain_tbl->num_pds > IRIS_AUX_HW_POWER_DOMAIN)
+		aux_pd_dev = core->pmdomain_tbl->pd_devs[IRIS_AUX_HW_POWER_DOMAIN];
+
+	ret = pm_runtime_resume_and_get(pd_dev);
+	if (ret < 0)
+		return ret;
+
+	if (aux_pd_dev) {
+		ret = pm_runtime_resume_and_get(aux_pd_dev);
+		if (ret < 0)
+			goto err_disable_power;
+	}
+
+	ret = iris_prepare_enable_clock(core, IRIS_HW_AHB_CLK);
+	if (ret)
+		goto err_disable_aux_power;
+
+	if (aux_pd_dev) {
+		ret = iris_prepare_enable_clock(core, IRIS_AUX_HW_AHB_CLK);
+		if (ret)
+			goto err_disable_hw_axi_clock;
+	}
+
+	ret = iris_prepare_enable_clock(core, IRIS_HW_CLK);
+	if (ret)
+		goto err_disable_aux_hw_axi_clock;
+
+	if (aux_pd_dev) {
+		ret = iris_prepare_enable_clock(core, IRIS_AUX_HW_CLK);
+		if (ret)
+			goto err_disable_hw_clock;
+	}
+
+	return 0;
+
+err_disable_hw_clock:
+	iris_disable_unprepare_clock(core, IRIS_HW_CLK);
+err_disable_aux_hw_axi_clock:
+	if (aux_pd_dev)
+		iris_disable_unprepare_clock(core, IRIS_AUX_HW_AHB_CLK);
+err_disable_hw_axi_clock:
+	iris_disable_unprepare_clock(core, IRIS_HW_AHB_CLK);
+err_disable_aux_power:
+	if (aux_pd_dev)
+		pm_runtime_put_sync(aux_pd_dev);
+err_disable_power:
+	pm_runtime_put_sync(pd_dev);
+	return ret;
+}
+
+void iris_vpu5_power_off_hw(struct iris_core *core)
+{
+	struct device *pd_dev = core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN];
+	struct device *aux_pd_dev = NULL;
+
+	if (core->pmdomain_tbl->num_pds > IRIS_AUX_HW_POWER_DOMAIN)
+		aux_pd_dev = core->pmdomain_tbl->pd_devs[IRIS_AUX_HW_POWER_DOMAIN];
+
+	if (aux_pd_dev)
+		iris_disable_unprepare_clock(core, IRIS_AUX_HW_CLK);
+	iris_disable_unprepare_clock(core, IRIS_HW_CLK);
+	if (aux_pd_dev)
+		iris_disable_unprepare_clock(core, IRIS_AUX_HW_AHB_CLK);
+	iris_disable_unprepare_clock(core, IRIS_HW_AHB_CLK);
+
+	if (aux_pd_dev)
+		pm_runtime_put_sync(aux_pd_dev);
+	pm_runtime_put_sync(pd_dev);
+}
+
 int iris_vpu_set_hwmode(struct iris_core *core)
 {
+	if (iris_vpu_uses_legacy_vpu5(core))
+		return 0;
+
 	writel(CORE_BRIDGE_SW_RESET | CORE_BRIDGE_HW_RESET_DISABLE,
 	       core->reg_base + CPU_CS_AHB_BRIDGE_SYNC_RESET);
 	writel(CORE_BRIDGE_HW_RESET_DISABLE, core->reg_base + CPU_CS_AHB_BRIDGE_SYNC_RESET);
@@ -508,23 +733,39 @@ int iris_vpu_power_on(struct iris_core *core)
 	if (ret)
 		goto err_unvote_icc;
 
-	ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
-	if (ret)
-		goto err_power_off_ctrl;
+	if (!iris_vpu_uses_legacy_vpu5(core)) {
+		ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
+		if (ret)
+			goto err_power_off_ctrl;
+	}
 
 	freq = core->power.clk_freq ? core->power.clk_freq :
 				      (u32)ULONG_MAX;
 
 	iris_opp_set_rate(core->dev, freq);
 
-	core->iris_platform_data->vpu_ops->set_preset_registers(core);
+	if (iris_vpu_uses_legacy_vpu5(core)) {
+		ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
+		if (ret)
+			goto err_clear_opp;
+	}
 
-	core->iris_platform_data->vpu_ops->interrupt_init(core);
+	if (core->iris_platform_data->vpu_ops->set_preset_registers)
+		core->iris_platform_data->vpu_ops->set_preset_registers(core);
+	else
+		iris_vpu_set_preset_registers(core);
+
+	if (core->iris_platform_data->vpu_ops->interrupt_init)
+		core->iris_platform_data->vpu_ops->interrupt_init(core);
+	else
+		iris_vpu_interrupt_init(core);
 	core->intr_status = 0;
 	enable_irq(core->irq);
 
 	return 0;
 
+err_clear_opp:
+	iris_opp_set_rate(core->dev, 0);
 err_power_off_ctrl:
 	core->iris_platform_data->vpu_ops->power_off_controller(core);
 err_unvote_icc:
@@ -537,5 +778,16 @@ err:
 
 void iris_vpu_set_preset_registers(struct iris_core *core)
 {
+	if (iris_vpu_uses_legacy_vpu5(core)) {
+		/*
+		 * Iris1 requires both controller clock-gating registers to be cleared
+		 * after the clocks are enabled.  This is the sequence used by the
+		 * Qualcomm SM8150 downstream driver and the legacy Venus driver.
+		 */
+		writel(0, core->reg_base + 0xE2010);
+		writel(0, core->reg_base + 0xE2000);
+		return;
+	}
+
 	writel(0x0, core->reg_base + 0xb0088);
 }

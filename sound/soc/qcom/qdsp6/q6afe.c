@@ -1107,7 +1107,10 @@ static int afe_apr_send_pkt(struct q6afe *afe, struct apr_pkt *pkt,
 	} else if (result->status > 0) {
 		dev_err(afe->dev, "DSP returned error[%x]\n",
 			result->status);
-		ret = -EINVAL;
+		/* Keep ADSP_EALREADY distinct: q6afe-dai needs it to resync a
+		 * port that the DSP still considers running.
+		 */
+		ret = (result->status == ADSP_EALREADY) ? -EALREADY : -EINVAL;
 	} else {
 		ret = 0;
 	}
