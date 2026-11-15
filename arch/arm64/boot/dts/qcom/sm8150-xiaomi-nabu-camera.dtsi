@@ -13,6 +13,7 @@
 		regulator-min-microvolt = <1200000>;
 		regulator-max-microvolt = <1200000>;
 		regulator-enable-ramp-delay = <135>;
+		regulator-always-on;
 		gpio = <&pm8150l_gpios 3 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 		vin-supply = <&vreg_s4a_1p8>;
