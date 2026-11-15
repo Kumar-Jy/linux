@@ -1454,6 +1454,8 @@ return:
 *******************************************************/
 static int32_t nvt_ts_resume(struct device *dev)
 {
+	int32_t ret = 0;
+
 	if (bTouchIsAwake) {
 		NVT_LOG("Touch is already resume\n");
 		return 0;
@@ -1465,11 +1467,21 @@ static int32_t nvt_ts_resume(struct device *dev)
 	NVT_LOG("resume start\n");
 	ts->ic_state = NVT_IC_RESUME_IN;
 
-	// please make sure display reset(RESX) sequence and mipi dsi cmds sent before this
-	if (nvt_update_firmware(ts->fw_name))
-		NVT_ERR("download firmware failed\n");
+	/*
+	 * Wake IC from deep sleep first, then reload firmware.
+	 * nvt_check_fw_reset_state() brings the IC out of deep sleep;
+	 * downloading while it is still asleep fails. Once awake,
+	 * re-downloading the firmware ensures touch interrupts work reliably.
+	 */
+	ret = nvt_check_fw_reset_state(RESET_STATE_REK);
+	if (ret)
+		NVT_ERR("reset-state check failed (%d)\n", ret);
 
-	nvt_check_fw_reset_state(RESET_STATE_REK);
+	ret = nvt_update_firmware(ts->fw_name);
+	if (ret) {
+		NVT_ERR("download firmware failed (%d)\n", ret);
+		nvt_check_fw_reset_state(RESET_STATE_REK);
+	}
 
 	if (!ts->db_wakeup && !ts->irq_enabled)
 		nvt_irq_enable(true);
