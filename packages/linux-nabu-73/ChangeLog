@@ -1,3 +1,10 @@
+2026-11-15 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.4-0:
+	- Linux: merge upstream stable Linux 7.3.4 (v7.3.4)
+	- Media: Iris VPU power domain shutdown ordering and AHB bridge reset sequence
+	- FastRPC / QDSP6: sync upstream stable fixes and context ID validation
+	- Packaging: bump linux-nabu to 7.3.4-0 (kernel release 7.3.4-0-krjy)
+
 2026-11-10 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.3-3:
 	- Power: drop unpopulated TI BQ25970 driver & DTS node, eliminating GPIO 55 interrupt collision with LN8000 (fixes ADB USB host PMIC hard-reset)
