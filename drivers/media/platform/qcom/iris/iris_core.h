@@ -133,6 +133,7 @@ struct iris_core {
 	struct llcc_slice_desc			*llcc_slices[2];
 	bool					llcc_active;
 	bool					syscache_set;
+	bool					vpu_powered;
 };
 
 int iris_core_init(struct iris_core *core);

@@ -313,6 +313,10 @@ void iris_vpu_power_off(struct iris_core *core)
 {
 	int i;
 
+	if (!core->vpu_powered)
+		return;
+	core->vpu_powered = false;
+
 	if (core->llcc_active) {
 		for (i = ARRAY_SIZE(core->llcc_slices) - 1; i >= 0; i--) {
 			if (core->llcc_slices[i]) {
@@ -724,6 +728,8 @@ int iris_vpu_power_on(struct iris_core *core)
 {
 	u32 freq;
 	int ret;
+
+	core->vpu_powered = true;
 
 	ret = iris_set_icc_bw(core, INT_MAX);
 	if (ret)
