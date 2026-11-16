@@ -620,13 +620,6 @@ struct hfi_msg_session_release_buffers_done_pkt {
 	u32 buffer_info[];
 };
 
-struct hfi_msg_session_property_info_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 num_properties;
-	u32 property;
-	u8 data[];
-};
-
 struct hfi_msg_sys_debug_pkt {
 	struct hfi_pkt_hdr hdr;
 	u32 msg_type;

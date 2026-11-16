@@ -608,7 +608,6 @@ static void iris_hfi_gen1_session_property_info(struct iris_inst *inst, void *pa
 out:
 	complete(&inst->completion);
 }
-}
 
 struct iris_hfi_gen1_response_pkt_info {
 	u32 pkt;

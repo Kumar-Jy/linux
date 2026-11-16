@@ -198,7 +198,7 @@ void iris_vpu_clear_interrupt(struct iris_core *core)
 int iris_vpu_watchdog(struct iris_core *core, u32 intr_status)
 {
 	u32 watchdog_mask = iris_vpu_uses_legacy_vpu5(core) ? BIT(4) :
-			    (core->iris_platform_data->wd_intr_mask ? : WRAPPER_INTR_STATUS_A2HWD_BMSK);
+			    core->iris_platform_data->wd_intr_mask;
 
 	if (intr_status & watchdog_mask) {
 		dev_err(core->dev, "received watchdog interrupt\n");
