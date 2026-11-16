@@ -56,7 +56,7 @@ static int iris_hfi_gen1_sys_image_version(struct iris_core *core)
 	return iris_hfi_queue_cmd_write_locked(core, &packet, packet.hdr.size);
 }
 
-static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
+static int iris_hfi_gen1_sys_power_control_locked(struct iris_core *core, bool enable)
 {
 	struct hfi_sys_set_property_pkt *pkt;
 	struct hfi_enable *hfi;
@@ -77,6 +77,32 @@ static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
 	hfi->enable = enable;
 
 	ret = iris_hfi_queue_cmd_write_locked(core, pkt, pkt->hdr.size);
+	kfree(pkt);
+
+	return ret;
+}
+
+static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
+{
+	struct hfi_sys_set_property_pkt *pkt;
+	struct hfi_enable *hfi;
+	u32 packet_size;
+	int ret;
+
+	packet_size = struct_size(pkt, data, 1) + sizeof(*hfi);
+	pkt = kzalloc(packet_size, GFP_KERNEL);
+	if (!pkt)
+		return -ENOMEM;
+
+	hfi = (struct hfi_enable *)&pkt->data[1];
+
+	pkt->hdr.size = packet_size;
+	pkt->hdr.pkt_type = HFI_CMD_SYS_SET_PROPERTY;
+	pkt->num_properties = 1;
+	pkt->data[0] = HFI_PROPERTY_SYS_CODEC_POWER_PLANE_CTRL;
+	hfi->enable = enable;
+
+	ret = iris_hfi_queue_cmd_write(core, pkt, pkt->hdr.size);
 	kfree(pkt);
 
 	return ret;
@@ -194,7 +220,7 @@ error_put:
 
 static int iris_hfi_gen1_sys_interframe_powercollapse(struct iris_core *core)
 {
-	return iris_hfi_gen1_sys_power_control(core, true);
+	return iris_hfi_gen1_sys_power_control_locked(core, true);
 }
 
 static int iris_hfi_gen1_sys_pc_prep(struct iris_core *core)
