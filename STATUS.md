@@ -76,9 +76,18 @@ The universal SM8150 kernel baseline (`arch/arm64/configs/sm8150_defconfig`) pro
 
 ---
 
-## Linux 7.3 Release (7.3.3 Final)
+## Linux 7.3 Release (7.3.4-0)
 
-The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.3** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
+The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.4** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
+
+### 0. Hardware Stability & Power State Fixes (7.3.4-0)
+- **Deep Sleep Wakeup via PDC**: Routed SPMI PMIC summary interrupt through PDC pin 1 (`interrupts-extended = <&pdc 1 IRQ_TYPE_LEVEL_HIGH>;`) in `sm8150.dtsi` so the hardware power button wakes the tablet when the GIC is powered off in `s2idle`.
+- **TRION PLL Relock**: Configured `test_ctl_hi_val = 0x2` in `camcc-sm8150.c` to enable internal bias relocking on resume.
+- **Camera Digital Supply Stability**: Maintained `camera_vdig_1p2` regulator in always-on state to prevent I2C bus freeze on sensor unbind.
+- **Iris VPU Idempotent Shutdown**: Made VPU power-off idempotent to prevent GDSC domain underflow warnings during suspend.
+- **Touchscreen Resume Race Fix**: Added dummy wake command to NT36523 IC before firmware reload on resume to prevent I2C NACKs.
+- **WCD934x SLIMbus Port Teardown**: Stopped capture port before SLIMbus channel teardown to eliminate port 6 overflow stalls.
+- **Type-C Audio Flapping Fix**: Evaluated `TYPEC_DEBOUNCE_DONE` as attached in PMIC Type-C CC line detection, stopping USB-C dongle flapping.
 
 ### 1. Display, Refresh Rate & Backlight
 - **60Hz Touch Sync Across Blank**: Restored vendor `nabu_sync_pen_direct()` DCS sequence on every panel unblank. Prevents NT36523 register `0x23` loss at 60Hz and stops WDT MCU SRAM reflash races during screen sleep.

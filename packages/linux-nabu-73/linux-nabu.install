@@ -97,7 +97,7 @@ pre_upgrade() {
 
 show_changelog() {
     echo -e "\n\e[1;34m::\e[0m \e[1mlinux-nabu ($1) changelog highlights:\e[0m"
-    echo "   * Kernel: Linux 7.3.1, sm8150 baseline"
+    echo "   * Kernel: Linux 7.3.3, sm8150 baseline"
     echo "   * Display: DSI PLL lock fix on boot, PHY runtime resume, PLL bias protection"
     echo "   * Graphics: Adreno 640 Zap shader early initramfs bundling (clean DRM boot)"
     echo "   * UFS: DT frequency table + reset quirk for Samsung UFS"

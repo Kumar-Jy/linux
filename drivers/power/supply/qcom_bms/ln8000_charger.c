@@ -696,7 +696,12 @@ static int ln8000_get_current_now(void *priv, int *val)
 		return ret;
 	}
 
-	*val = iin * 2;
+	/*
+	 * Return true USB input current (IIN).
+	 * Note: ln8000 is a 2:1 charge pump so battery charging current
+	 * is iin * 2, but this psy represents the USB input power supply.
+	 */
+	*val = iin;
 	return 0;
 }
 

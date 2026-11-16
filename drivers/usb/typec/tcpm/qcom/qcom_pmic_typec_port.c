@@ -374,7 +374,7 @@ static int qcom_pmic_typec_port_get_cc(struct tcpc_dev *tcpc,
 	if (ret)
 		goto done;
 
-	attached = !!(misc & CC_ATTACHED);
+	attached = !!(misc & (CC_ATTACHED | TYPEC_DEBOUNCE_DONE));
 
 	if (pmic_typec_port->debouncing_cc) {
 		ret = -EBUSY;

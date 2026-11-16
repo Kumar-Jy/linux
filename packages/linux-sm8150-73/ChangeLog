@@ -1,3 +1,17 @@
+2026-11-15 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.4-0:
+	- Linux: merge upstream stable Linux 7.3.4 (v7.3.4)
+	- DTS: route SPMI summary interrupt through PDC for wake-up from s2idle deep sleep across all SM8150 platforms
+	- Clock: configure test_ctl_hi_val for TRION PLL relock in camcc-sm8150
+	- DTS: keep camera_vdig_1p2 regulator always on to prevent i2c bus freeze on sensor probe
+	- Media: make Iris VPU power-off idempotent to prevent GDSC underflow warning
+	- Input: wake NT36523 IC before firmware reload on system resume
+	- Audio: stop WCD934x capture port before tearing down SLIM channel to avoid bus stall
+	- Type-C: consider debounce done as attached in PMIC Type-C CC line detection (fixes audio dongle flapping)
+	- Media: Iris VPU power domain shutdown ordering and AHB bridge reset sequence
+	- FastRPC / QDSP6: sync upstream stable fixes and context ID validation
+	- Packaging: bump linux-sm8150 to 7.3.4-0 (kernel release 7.3.4-0-sm8150)
+
 2026-11-07 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.3:
 	- Linux: merge upstream stable Linux 7.3.3 (v7.3.3)

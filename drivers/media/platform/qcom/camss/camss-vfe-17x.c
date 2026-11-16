@@ -583,7 +583,6 @@ static int vfe_enable_output(struct vfe_line *line)
 
 	return 0;
 }
-
 /*
  * vfe_enable - Enable streaming on VFE line
  * @line: VFE line

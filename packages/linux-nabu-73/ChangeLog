@@ -1,3 +1,43 @@
+2026-11-15 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.4-0:
+	- Linux: merge upstream stable Linux 7.3.4 (v7.3.4)
+	- DTS: route SPMI summary interrupt through PDC for wake-up from s2idle deep sleep
+	- Clock: configure test_ctl_hi_val for TRION PLL relock in camcc-sm8150
+	- DTS: keep camera_vdig_1p2 regulator always on to prevent i2c bus freeze on sensor probe
+	- Media: make Iris VPU power-off idempotent to prevent GDSC underflow warning
+	- Input: wake NT36523 IC before firmware reload on system resume
+	- Audio: stop WCD934x capture port before tearing down SLIM channel to avoid bus stall
+	- Type-C: consider debounce done as attached in PMIC Type-C CC line detection (fixes audio dongle flapping)
+	- Media: Iris VPU power domain shutdown ordering and AHB bridge reset sequence
+	- FastRPC / QDSP6: sync upstream stable fixes and context ID validation
+	- Packaging: bump linux-nabu to 7.3.4-0 (kernel release 7.3.4-0-krjy)
+
+2026-11-10 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3-3:
+	- Power: drop unpopulated TI BQ25970 driver & DTS node, eliminating GPIO 55 interrupt collision with LN8000 (fixes ADB USB host PMIC hard-reset)
+	- DTS: allocate 1MB for panic crash dumps and 3MB for console in ramoops pstore
+	- Packaging: bump linux-nabu to 7.3.3-3 (kernel release 7.3.3-3-krjy)
+
+2026-11-09 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3-2:
+	- Power: add TI BQ25970 direct charger support for alternative hardware revisions
+	- Media: restore Iris1/SM8150 cached_capture, display delay, and decode-order output for VA-API (fixes browser HEVC/H.265 hardware decode)
+	- Packaging: bump linux-nabu to 7.3.3-2 (kernel release 7.3.3-2-krjy)
+
+2026-11-08 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3-1:
+	- Power: fix PM8150B USBIN voltage/current scaling factors and LN8000 direct charge input current reporting
+	- Packaging: bump linux-nabu to 7.3.3-1 (kernel release 7.3.3-1-krjy)
+
+2026-11-07 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.3:
+	- Linux: merge upstream stable Linux 7.3.3 (v7.3.3)
+	- Display & Touch: fix 60Hz touch sync across blank and prevent WDT recovery races
+	- Display & Backlight: fix 120<->60Hz dfps switching and Novatek NT36523 60Hz mode-switch sync-pen & VFP porch timing (fixes gray screen)
+	- Power & Battery: enable LN8000 33W direct fast charge, CC sticky window, and PM8150B BMS charging status reporting logic
+	- Audio: add wired headphone playback DAI link in DTS, AFE port recovery, and stream close tweak
+	- Packaging: bump linux-nabu to 7.3.3
+
 2026-11-01 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.1-1:
 	- Power: restore 300ms hardware timer s2idle grace window to prevent immediate wakeups from power button release

@@ -127,6 +127,8 @@ struct iris_inst {
 	u32				enc_scale_height;
 	u32				hfi_layer_type;
 	u32				hfi_layer_count;
+	u32				display_delay;
+	bool				display_delay_enable;
 };
 
 #endif
