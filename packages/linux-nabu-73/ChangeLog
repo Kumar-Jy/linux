@@ -1,3 +1,9 @@
+2026-11-16 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.4-1:
+	- Media: Iris Gen1 fix queue write locking in sys_power_control during session open
+	- Media: Iris add NULL check before freeing reserved IOVA regions in unreserve
+	- Packaging: bump linux-nabu to 7.3.4-1 (kernel release 7.3.4-1-krjy)
+
 2026-11-15 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.4-0:
 	- Linux: merge upstream stable Linux 7.3.4 (v7.3.4)
