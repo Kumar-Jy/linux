@@ -12,10 +12,10 @@ This document tracks the hardware support status and driver implementation detai
 | **Touch** | Capacitive Multi-touch & Pen Sync | ✅ Working | Novatek NT36523 SPI touchscreen (`novatek/novatek_nt36523_fw.bin`), 10-point touch, touch sync preserved across 60Hz blank/wake |
 | **Backlight** | KTZ8866 Backlight Controller | ✅ Working | 26.4V OVP, 23mA full scale, 2048-entry non-linear exponential brightness curve (flicker-free at 60Hz/120Hz) |
 | **Graphics** | Adreno 640 GPU 3D Acceleration | ✅ Working | Mesa Turnip Vulkan 1.3 (`0x6040001`), Freedreno OpenGL 4.6, GMU firmware v2.0.261 |
-| **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 dual-core architecture, VA-API browser acceleration |
+| **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.4 VPU5 dual-core architecture, VA-API browser acceleration |
 | **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire |
 | **Audio (Headphones)**| Wired Type-C / 3.5mm Headphone Jack | ✅ Working | Dedicated `MultiMedia3` frontend + `SLIMBUS_0_RX <-> AIF1_PB` DAI-link on WCD9340 with ADSP port recovery |
-| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
+| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 24-bit 48kHz capture |
 | **Camera (Rear)**| 13MP OmniVision OV13B10 | ✅ Working | I2C `4-0010` via CCI, `msm_csiphy0` on CAMSS, CN3927 VCM autofocus, 4208x3120 capture |
 | **Camera (Front)**| 8MP OmniVision OV8856 | ✅ Working | I2C `5-0010` via CCI, `msm_csiphy1`, native `SBGGR10_1X10` format alignment |
 | **Flash / Torch** | Dual Rear LED Flash | ✅ Working | PM8150L flash controller (`/sys/class/leds/white:flash`), controllable via `nabu-torch` |
@@ -63,7 +63,7 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the upstream **Linux 7
 - **Speakers & Mic**: Quad CS35L41 amplifiers over I2S/TDM and WCD9341 24-bit mic capture.
 
 ### 4. Iris VPU Hardware Video Decode & Encode
-- SM8150 Iris VPU5 dual-core architecture ported to native Linux 7.3:
+- SM8150 Iris VPU5 dual-core architecture ported to native Linux 7.4:
   - Dual GDSC power domains (`mvs0` and `mvs1`) managed with asynchronous power sequencing.
   - Dual clock supplies (`vcodec0_core` and `vcodec1_core`) scaled synchronously with OPP levels.
   - Opp-table voltage ordering deferred until both GDSC power domains are operational.
@@ -79,5 +79,5 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the upstream **Linux 7
 - **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
 ### 6. Packaging & UKI
-- **Package**: `linux-nabu-74-7.4.0.rc3-0` (`arch=('aarch64')`, kernel release `7.4.0-rc3-0-krjy`).
-- **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.
+- **Package**: `linux-nabu-7.4.0.rc3-0` (`arch=('aarch64')`, kernel release `7.4.0-rc3-0-krjy`).
+- **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink and early firmware bundling in `packages/linux-nabu-74/linux-nabu.install`.

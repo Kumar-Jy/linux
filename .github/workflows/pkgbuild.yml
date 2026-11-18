@@ -352,5 +352,7 @@ jobs:
 
           # Trigger downstream package repository sync in nabu-pkgs
           echo "Triggering Arch and Ubuntu repository sync in nabu-pkgs..."
-          gh workflow run "Arch pkgs" --repo Kumar-Jy/nabu-pkgs --ref arch -f build_linux_nabu_73=true 2>/dev/null || true
+          if [ "$package" = "linux-nabu-73" ]; then
+            gh workflow run "Arch pkgs" --repo Kumar-Jy/nabu-pkgs --ref arch -f build_linux_nabu_73=true 2>/dev/null || true
+          fi
           gh workflow run "ubuntu-repo.yml" --repo Kumar-Jy/nabu-pkgs --ref ubuntu 2>/dev/null || true
