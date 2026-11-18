@@ -3024,6 +3024,7 @@ int ath10k_core_start(struct ath10k *ar, enum ath10k_firmware_mode mode,
 	clear_bit(ATH10K_FLAG_CRASH_FLUSH, &ar->dev_flags);
 
 	ar->running_fw = fw;
+	ar->thermal.broken = false;
 
 	/* WCN3990 HL firmware emits one chan_info event per scanned channel
 	 * plus a freq=0 completion marker, but its firmware-5.bin meta omits
