@@ -1,3 +1,11 @@
+2026-11-18 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.4.0.rc3-0:
+	- Linux: track upstream Linux 7.4-rc3 (v7.4-rc3)
+	- Media: Iris Gen1 fix queue write locking in sys_power_control during session open
+	- Media: Iris add NULL check before freeing reserved IOVA regions in unreserve
+	- Sync: clean upstream merge with ath10k WiFi thermal and QDSP6 q6asm stream routing
+	- Packaging: bump linux-nabu-74 to 7.4.0.rc3-0 (kernel release 7.4.0-rc3-0-krjy)
+
 2026-11-11 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.4.0.rc2-1:
 	- Linux: track upstream Linux 7.4-rc2 (v7.4-rc2)
