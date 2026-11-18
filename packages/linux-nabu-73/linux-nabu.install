@@ -104,7 +104,7 @@ show_changelog() {
     echo "   * FastRPC SLPI: high-IOVA alias mapping + sensor PDR registration"
     echo "   * Camera & Video: OV13B10/OV8856/CN3927, Iris VPU hardware video decode"
     echo "   * Audio: SM8150 machine driver, 24-bit mic capture, CS35L41 speaker routing"
-    echo "   * Power: SMB5 USB-PD charger (50mA steps & Rp ad), FSA4480 BQ25970 fallback, wireless stylus"
+    echo "   * Power: SMB5 USB-PD charger (50mA steps & Rp advertising), LN8000 33W direct charge, wireless stylus"
     echo "   * Input: Novatek NT36523 touchscreen, Xiaomi keyboard & cover lid notifier"
     echo ""
 }

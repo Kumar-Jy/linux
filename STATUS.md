@@ -15,7 +15,7 @@ This document tracks the hardware support status and driver implementation detai
 | **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 dual-core architecture, VA-API browser acceleration |
 | **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire |
 | **Audio (Headphones)**| Wired Type-C / 3.5mm Headphone Jack | ✅ Working | Dedicated `MultiMedia3` frontend + `SLIMBUS_0_RX <-> AIF1_PB` DAI-link on WCD9340 with ADSP port recovery |
-| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
+| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 24-bit 48kHz capture |
 | **Camera (Rear)**| 13MP OmniVision OV13B10 | ✅ Working | I2C `4-0010` via CCI, `msm_csiphy0` on CAMSS, CN3927 VCM autofocus, 4208x3120 capture |
 | **Camera (Front)**| 8MP OmniVision OV8856 | ✅ Working | I2C `5-0010` via CCI, `msm_csiphy1`, native `SBGGR10_1X10` format alignment |
 | **Flash / Torch** | Dual Rear LED Flash | ✅ Working | PM8150L flash controller (`/sys/class/leds/white:flash`), controllable via `nabu-torch` |
