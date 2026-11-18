@@ -1,3 +1,14 @@
+2026-11-18 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.5-0:
+	- Linux: merge upstream stable Linux 7.3.5 (v7.3.5)
+	- ARM64: save and restore TPIDR2_EL0 across CPU suspend to stabilize PSCI deep sleep and idle
+	- Bluetooth: sync Qualcomm WCN3950/WCN3990 NVM baud rate offset and restore legacy advertising on resume
+	- Audio: guard Qualcomm DSP (q6apm/q6prm) callbacks against early uninitialized access during probe
+	- Storage: F2FS sync meta pages, atomic writeback, and checkpoint SIT/NAT bounds hardening
+	- QRTR / FastRPC: preserve validated Qualcomm GLINK routing and SLPI sensor island stability
+	- Core: memory management CMA multi-range allocation and GUP overflow protection
+	- Packaging: bump linux-nabu to 7.3.5-0 (kernel release 7.3.5-0-krjy)
+
 2026-11-16 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.4-1:
 	- Media: Iris Gen1 fix queue write locking in sys_power_control during session open

@@ -37,7 +37,7 @@ This document tracks the hardware support status and driver implementation detai
 
 ## Linux 7.3 Architecture & Implementation
 
-The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the pristine upstream **Linux 7.3.3** baseline (branch `nabu/7.3.y`).
+The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the pristine upstream **Linux 7.3.5** baseline (branch `nabu/7.3.y`).
 
 ### 1. Display, Refresh Rate & Backlight
 - **60Hz Touch Sync Across Blank**: Restored vendor `nabu_sync_pen_direct()` DCS sequence on every panel unblank. Prevents NT36523 register `0x23` loss at 60Hz and stops WDT MCU SRAM reflash races during screen sleep.
@@ -79,5 +79,5 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the pristine upstream 
 - **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
 ### 6. Packaging & UKI
-- **Package**: `linux-nabu-7.3.3-3` (`arch=('aarch64')`, kernel release `7.3.3-3-krjy`).
+- **Package**: `linux-nabu-7.3.5-0` (`arch=('aarch64')`, kernel release `7.3.5-0-krjy`).
 - **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink and early firmware bundling in `packages/linux-nabu-73/linux-nabu.install`.
