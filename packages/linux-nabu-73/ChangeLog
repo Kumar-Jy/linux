@@ -1,3 +1,8 @@
+2026-11-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.5-1:
+	- Power: implement .poll file operation for wait queue in idtp9418 wireless charger
+	- Packaging: bump linux-nabu to 7.3.5-1 (kernel release 7.3.5-1-krjy)
+
 2026-11-18 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.5-0:
 	- Linux: merge upstream stable Linux 7.3.5 (v7.3.5)
