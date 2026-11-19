@@ -12,6 +12,7 @@
 #include <linux/fs.h>
 #include <linux/wait.h>
 #include <linux/kfifo.h>
+#include <linux/poll.h>
 #include "idtp9418.h"
 
 struct idtp9418_event {
@@ -118,10 +119,24 @@ static ssize_t idtp9418_kfifo_read(struct file *filp, char __user *buf,
 	return sizeof(evt);
 }
 
+static __poll_t idtp9418_kfifo_poll(struct file *filp, struct poll_table_struct *wait)
+{
+	struct idtp9418_device_info *di = filp->private_data;
+	__poll_t mask = 0;
+
+	poll_wait(filp, &di->wait_queue, wait);
+
+	if (!kfifo_is_empty(&di->kfifo))
+		mask |= EPOLLIN | EPOLLRDNORM;
+
+	return mask;
+}
+
 static const struct file_operations idtp9418_fops = {
 	.owner = THIS_MODULE,
 	.open = idtp9418_kfifo_open,
 	.read = idtp9418_kfifo_read,
+	.poll = idtp9418_kfifo_poll,
 };
 
 static struct miscdevice idtp9418_miscdev = {
