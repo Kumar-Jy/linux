@@ -135,7 +135,7 @@ struct qcom_bms_info {
 	u32 required_auth_mask;
 	bool authenticated;
 
-	struct work_struct status_work;
+	struct delayed_work status_work;
 
 	/* tcpm source psy (CC-driven attach/detach) drives direct-charge control. */
 	struct notifier_block psy_nb;
@@ -697,7 +697,7 @@ static int qcom_bms_psy_notifier(struct notifier_block *nb, unsigned long event,
 
 	if (event == PSY_EVENT_PROP_CHANGED && info->tcpm_np &&
 	    psy->dev.of_node == info->tcpm_np)
-		queue_work(system_freezable_wq, &info->status_work);
+		mod_delayed_work(system_freezable_wq, &info->status_work, 0);
 
 	return NOTIFY_OK;
 }
@@ -797,12 +797,23 @@ static void qcom_bms_evaluate_direct_charge(struct qcom_bms_info *info)
 	 * direct charge can settle; if it is still offline after the timeout,
 	 * treat it as a real disconnect.
 	 */
-	if (!cc_online && direct_online &&
-	    time_before(jiffies,
-			info->cc_online_last + msecs_to_jiffies(QCOM_BMS_CC_STICKY_MS))) {
-		cc_online = true;
-		dev_dbg(info->dev,
-			"tcpm offline while direct charge is switching, holding\n");
+	if (!cc_online && direct_online) {
+		int direct_i = 0;
+		bool direct_delivering = false;
+
+		if (direct.ops->get_current_now &&
+		    !direct.ops->get_current_now(direct.priv, &direct_i))
+			direct_delivering = direct_i > QCOM_BMS_DC_MIN_DELIVER_UA;
+
+		if (direct_delivering &&
+		    time_before(jiffies,
+				info->cc_online_last + msecs_to_jiffies(QCOM_BMS_CC_STICKY_MS))) {
+			cc_online = true;
+			dev_dbg(info->dev,
+				"tcpm offline while direct charge is switching, holding\n");
+			mod_delayed_work(system_freezable_wq, &info->status_work,
+					 msecs_to_jiffies(QCOM_BMS_CC_STICKY_MS));
+		}
 	}
 
 	want_on = cc_online && READ_ONCE(info->authenticated) &&
@@ -938,11 +949,12 @@ out:
 
 static void qcom_bms_status_work(struct work_struct *work)
 {
+	struct delayed_work *dwork = to_delayed_work(work);
 	struct qcom_bms_info *info =
-		container_of(work, struct qcom_bms_info, status_work);
+		container_of(dwork, struct qcom_bms_info, status_work);
 
-	qcom_bms_update_status(info);
 	qcom_bms_evaluate_direct_charge(info);
+	qcom_bms_update_status(info);
 }
 
 static void qcom_bms_refresh_authentication(struct qcom_bms_info *info)
@@ -1006,7 +1018,7 @@ static void qcom_bms_refresh_authentication(struct qcom_bms_info *info)
 	power_supply_changed(info->bms_psy);
 
 	/* Authentication gates direct charge; re-evaluate on change. */
-	queue_work(system_freezable_wq, &info->status_work);
+	mod_delayed_work(system_freezable_wq, &info->status_work, 0);
 }
 
 int qcom_bms_register_fg(struct device *dev, const struct qcom_bms_fg_ops *ops,
@@ -1138,7 +1150,7 @@ void qcom_bms_unregister_fg(struct device *dev)
 	info->fg.unregistering = false;
 	mutex_unlock(&info->ops_lock);
 
-	queue_work(system_freezable_wq, &info->status_work);
+	mod_delayed_work(system_freezable_wq, &info->status_work, 0);
 }
 EXPORT_SYMBOL_GPL(qcom_bms_unregister_fg);
 
@@ -1177,7 +1189,7 @@ void qcom_bms_unregister_charger(struct device *dev)
 	charger->unregistering = false;
 	mutex_unlock(&info->ops_lock);
 
-	queue_work(system_freezable_wq, &info->status_work);
+	mod_delayed_work(system_freezable_wq, &info->status_work, 0);
 }
 EXPORT_SYMBOL_GPL(qcom_bms_unregister_charger);
 
@@ -1281,7 +1293,7 @@ void qcom_bms_notify_changed(struct device *dev)
 	registered = info->fg.dev == dev || info->pmic_chg.dev == dev ||
 		     info->direct_chg.dev == dev;
 	if (registered)
-		queue_work(system_freezable_wq, &info->status_work);
+		mod_delayed_work(system_freezable_wq, &info->status_work, 0);
 	mutex_unlock(&info->ops_lock);
 }
 EXPORT_SYMBOL_GPL(qcom_bms_notify_changed);
@@ -1334,7 +1346,7 @@ static int qcom_bms_probe(struct platform_device *pdev)
 	complete_all(&info->pmic_chg.idle);
 	init_completion(&info->direct_chg.idle);
 	complete_all(&info->direct_chg.idle);
-	INIT_WORK(&info->status_work, qcom_bms_status_work);
+	INIT_DELAYED_WORK(&info->status_work, qcom_bms_status_work);
 	psy_cfg.drv_data = info;
 	psy_cfg.fwnode = dev_fwnode(&pdev->dev);
 
@@ -1394,7 +1406,7 @@ static void qcom_bms_remove(struct platform_device *pdev)
 	mutex_unlock(&qcom_bms_mutex);
 
 	power_supply_unreg_notifier(&info->psy_nb);
-	cancel_work_sync(&info->status_work);
+	cancel_delayed_work_sync(&info->status_work);
 	if (info->tcpm_psy)
 		power_supply_put(info->tcpm_psy);
 	of_node_put(info->tcpm_np);
@@ -1405,7 +1417,7 @@ static int qcom_bms_resume(struct device *dev)
 	struct qcom_bms_info *info = dev_get_drvdata(dev);
 
 	/* Re-evaluate: charging state may have changed during sleep. */
-	queue_work(system_freezable_wq, &info->status_work);
+	mod_delayed_work(system_freezable_wq, &info->status_work, 0);
 	return 0;
 }
 
