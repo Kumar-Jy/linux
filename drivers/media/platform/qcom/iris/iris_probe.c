@@ -325,10 +325,12 @@ static int iris_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = iris_reserve_iova_region(dev, &core->iova_state, IRIS_NP_RESERVE_IOVA_START,
-				       IRIS_NP_RESERVE_IOVA_SIZE);
-	if (ret)
-		return ret;
+	if (!core->iris_platform_data->legacy_vpu5) {
+		ret = iris_reserve_iova_region(dev, &core->iova_state, IRIS_NP_RESERVE_IOVA_START,
+					       IRIS_NP_RESERVE_IOVA_SIZE);
+		if (ret)
+			return ret;
+	}
 
 	ret = v4l2_device_register(dev, &core->v4l2_dev);
 	if (ret)
