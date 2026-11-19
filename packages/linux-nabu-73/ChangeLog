@@ -1,11 +1,20 @@
 2026-11-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.5-2:
-	- Media: Iris skip restricted 0-600MB IOVA reservation on legacy VPU5 (SM8150) to restore hardware video decoding
-	- Packaging: bump linux-nabu to 7.3.5-2 (kernel release 7.3.5-2-krjy)
+	- Linux: merge upstream stable Linux 7.3.5 (v7.3.5)
+	- Media: Iris skip 0-600MB restricted IOVA on legacy VPU5 (SM8150) to restore H.264/HEVC hardware video decode
+	- Power: BMS evaluate direct charge before status update & gate CC sticky window (fixes charger disconnect lag)
+	- Power: idtp9418 wireless pen charger implement .poll wait queue file operation
+	- ARM64 / Power: save and restore TPIDR2_EL0 across CPU suspend to stabilize PSCI deep sleep and idle
+	- Connectivity: sync WCN3990 Bluetooth NVM baud rate offset and restore legacy advertising on resume
+	- Audio: guard DSP callbacks against uninitialized probe access; 24-bit microphone array capture
+	- Storage & Core: F2FS atomic writeback & SIT/NAT bounds hardening; CMA multi-range allocation & GUP protection
+	- Packaging: bump to 7.3.5-2 (7.3.5-2-krjy); fix CI multi-branch package resolver & install scripts
 
 2026-11-19 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.5-1:
 	- Power: implement .poll file operation for wait queue in idtp9418 wireless charger
+	- Packaging: correct repository URL, branch, and dynamic multi-branch package resolver in pkgbuild workflow
+	- Documentation: align microphone audio bit depth in STATUS.md to 24-bit and update installation highlights
 	- Packaging: bump linux-nabu to 7.3.5-1 (kernel release 7.3.5-1-krjy)
 
 2026-11-18 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
