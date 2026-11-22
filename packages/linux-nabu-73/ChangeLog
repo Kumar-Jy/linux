@@ -1,3 +1,12 @@
+2026-11-22 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.4-0 -> 7.3.5-4 (cumulative):
+	- 7.3.4-0 / 7.3.4-1: Linux 7.3.4 base; PDC s2idle wake, camera clock/regulator, Iris power/IOVA locking, touch, audio and Type-C resume fixes
+	- 7.3.5-0 / 7.3.5-1: Linux 7.3.5 base; TPIDR2_EL0, WCN3990 NVM, DSP probe guards, F2FS/CMA/GUP, stylus .poll, 24-bit mic
+	- 7.3.5-2: legacy VPU5 IOVA fix restoring H.264/HEVC; BMS direct charge; CI resolver/install fixes
+	- 7.3.5-3: default suspend to s2idle to avoid deep-sleep auto-wake
+	- 7.3.5-4: Iris VP9 extradata DMA and Gen1 format/buffer fixes; VP9 1080p/2K/4K hardware decode up to 135fps
+	- Packaging: bump linux-nabu to 7.3.5-4 (kernel release 7.3.5-4-krjy)
+
 2026-11-20 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.5-3:
 	- Power: default suspend to s2idle via mem_sleep_default to avoid auto-wake on deep
