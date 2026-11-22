@@ -69,7 +69,7 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the upstream **Linux 7
   - Opp-table voltage ordering deferred until both GDSC power domains are operational.
   - Zeroed HFI command and response ring memory buffers to avoid firmware assertion errors.
   - Runtime PM forbid and ISR interrupt clear resolving `VIDIOC_REQBUFS` failures.
-  - Full hardware decode (`/dev/video0`, `/dev/video16`) and encode (`/dev/video1`, `/dev/video17`) verified (H.264 10.6x, HEVC 13.9x).
+  - Full hardware decode (`/dev/video0`, `/dev/video16`) and encode (`/dev/video1`, `/dev/video17`) verified (H.264 10.6x, HEVC 13.9x, VP9 up to 4K @ 135fps).
 
 ### 5. Sleep, Power Management & System Stability
 - **S2idle Power Button Grace Window**: Restored a 300ms hardware timer grace window (`CONFIG_SUSPEND_S2IDLE_WAKE_GRACE`) in the PM core and hooked `pm_s2idle_set_wake_irq` for the PM8941 power key, eliminating instant wakeups upon button release.
@@ -79,5 +79,5 @@ The Xiaomi Pad 5 (nabu) hardware stack is integrated onto the upstream **Linux 7
 - **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
 ### 6. Packaging & UKI
-- **Package**: `linux-nabu-7.4.0.rc3-0` (`arch=('aarch64')`, kernel release `7.4.0-rc3-0-krjy`).
+- **Package**: `linux-nabu-7.4.0.rc3-4` (`arch=('aarch64')`, kernel release `7.4.0-rc3-4-krjy`).
 - **Unified Kernel Image (UKI)**: Automated UKI generation via `ukify` with DTB symlink and early firmware bundling in `packages/linux-nabu-74/linux-nabu.install`.
