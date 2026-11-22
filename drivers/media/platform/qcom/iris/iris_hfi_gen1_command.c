@@ -1004,21 +1004,36 @@ static int iris_hfi_gen1_set_raw_format(struct iris_inst *inst, u32 plane)
 		pixelformat = inst->fmt_dst->fmt.pix_mp.pixelformat;
 		if (iris_split_mode_enabled(inst)) {
 			fmt.buffer_type = HFI_BUFFER_OUTPUT;
-			fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
+			if (pixelformat == V4L2_PIX_FMT_P010 || pixelformat == V4L2_PIX_FMT_QC10C)
+				fmt.format = HFI_COLOR_FORMAT_YUV420_TP10_UBWC;
+			else
+				fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
 
 			ret = hfi_gen1_set_property(inst, ptype, &fmt, sizeof(fmt));
 			if (ret)
 				return ret;
 
 			fmt.buffer_type = HFI_BUFFER_OUTPUT2;
-			fmt.format = pixelformat == V4L2_PIX_FMT_NV12 ?
-				HFI_COLOR_FORMAT_NV12 : HFI_COLOR_FORMAT_NV12_UBWC;
+			if (pixelformat == V4L2_PIX_FMT_P010)
+				fmt.format = HFI_COLOR_FORMAT_P010;
+			else if (pixelformat == V4L2_PIX_FMT_NV12)
+				fmt.format = HFI_COLOR_FORMAT_NV12;
+			else if (pixelformat == V4L2_PIX_FMT_QC10C)
+				fmt.format = HFI_COLOR_FORMAT_YUV420_TP10_UBWC;
+			else
+				fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
 
 			ret = hfi_gen1_set_property(inst, ptype, &fmt, sizeof(fmt));
 		} else {
 			fmt.buffer_type = HFI_BUFFER_OUTPUT;
-			fmt.format = pixelformat == V4L2_PIX_FMT_NV12 ?
-				HFI_COLOR_FORMAT_NV12 : HFI_COLOR_FORMAT_NV12_UBWC;
+			if (pixelformat == V4L2_PIX_FMT_P010)
+				fmt.format = HFI_COLOR_FORMAT_P010;
+			else if (pixelformat == V4L2_PIX_FMT_NV12)
+				fmt.format = HFI_COLOR_FORMAT_NV12;
+			else if (pixelformat == V4L2_PIX_FMT_QC10C)
+				fmt.format = HFI_COLOR_FORMAT_YUV420_TP10_UBWC;
+			else
+				fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
 
 			ret = hfi_gen1_set_property(inst, ptype, &fmt, sizeof(fmt));
 		}
