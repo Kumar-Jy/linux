@@ -311,6 +311,7 @@ int iris_vdec_s_fmt(struct iris_inst *inst, struct v4l2_format *f)
 		inst->crop.left = 0;
 		inst->crop.width = f->fmt.pix_mp.width;
 		inst->crop.height = f->fmt.pix_mp.height;
+		inst->capture_format_changed = true;
 		break;
 	default:
 		return -EINVAL;
@@ -376,6 +377,7 @@ int iris_vdec_streamon_input(struct iris_inst *inst)
 		return ret;
 
 	if (inst->core->iris_platform_data->legacy_vpu5 &&
+	    (inst->codec == V4L2_PIX_FMT_H264 || inst->codec == V4L2_PIX_FMT_HEVC) &&
 	    inst->display_delay_enable && !inst->display_delay) {
 		const struct iris_hfi_session_ops *hfi_ops = inst->hfi_session_ops;
 		u32 output_order = HFI_OUTPUT_ORDER_DECODE;

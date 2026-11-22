@@ -1096,8 +1096,8 @@ static int iris_hfi_gen1_set_num_bufs(struct iris_inst *inst, u32 plane)
 				return ret;
 
 			buf_count.type = HFI_BUFFER_OUTPUT2;
-			buf_count.count_actual = iris_vpu_buf_count(inst, BUF_DPB);
-			buf_count.count_min_host = iris_vpu_buf_count(inst, BUF_DPB);
+			buf_count.count_actual = VIDEO_MAX_FRAME;
+			buf_count.count_min_host = VIDEO_MAX_FRAME;
 
 			ret = hfi_gen1_set_property(inst, ptype, &buf_count, sizeof(buf_count));
 		} else {
@@ -1256,22 +1256,20 @@ static int iris_hfi_gen1_set_first_capture_config(struct iris_inst *inst)
 	const u32 count_ptype = HFI_PROPERTY_PARAM_BUFFER_COUNT_ACTUAL;
 	const u32 size_ptype = HFI_PROPERTY_PARAM_BUFFER_SIZE_ACTUAL;
 	const u32 frame_ptype = HFI_PROPERTY_PARAM_FRAME_SIZE;
-	struct hfi_buffer_count_actual count;
-	struct hfi_buffer_size_actual size;
-	struct hfi_framesize frame;
+	struct hfi_buffer_count_actual count = {0};
+	struct hfi_buffer_size_actual size = {0};
+	struct hfi_framesize frame = {0};
 	u32 dpb_count, output2_count;
 	int ret;
 
-	if (inst->capture_format_changed) {
-		ret = iris_hfi_gen1_set_raw_format(inst, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-		if (ret)
-			return ret;
-		ret = iris_hfi_gen1_set_format_constraints(inst,
+	ret = iris_hfi_gen1_set_raw_format(inst, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+	if (ret)
+		return ret;
+	ret = iris_hfi_gen1_set_format_constraints(inst,
 						    V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-		if (ret)
-			return ret;
-		inst->capture_format_changed = false;
-	}
+	if (ret)
+		return ret;
+	inst->capture_format_changed = false;
 
 	dpb_count = iris_vpu_buf_count(inst, BUF_DPB);
 	output2_count = vb2_get_num_buffers(dst_q);
@@ -1340,11 +1338,9 @@ static int iris_hfi_gen1_set_first_capture_config(struct iris_inst *inst)
 	/*
 	 * In split mode HFI_BUFFER_OUTPUT is the firmware-owned compressed
 	 * DPB, while OUTPUT2 is the client-visible linear capture stream.
-	 * The initial configuration uses VIDEO_MAX_FRAME before firmware has
-	 * reported the sequence requirements.  Before SESSION_CONTINUE,
-	 * replace that placeholder with the exact minimum number of DPBs which
-	 * iris_create_internal_buffers() is about to allocate and queue.  The
-	 * downstream SM8150 driver makes the same adjustment for split-mode DPBs.
+	 * The DPB count must strictly match the codec requirements (dpb_count),
+	 * while OUTPUT2 count_actual is set to the client-requested buffer count
+	 * so the firmware tracks all queued buffers accurately.
 	 */
 	count.type = HFI_BUFFER_OUTPUT;
 	count.count_actual = dpb_count;

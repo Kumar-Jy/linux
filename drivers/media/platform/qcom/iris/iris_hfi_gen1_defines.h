@@ -458,6 +458,12 @@ struct hfi_buffer_size_actual {
 	u32 size;
 };
 
+/*
+ * Venus Gen1 VP9 decoder architecture requires 8 reference frames +
+ * 3 display/reorder frames = 11 DPBs minimum.
+ */
+#define VP9_GEN1_MIN_DPB_COUNT				11
+
 struct hfi_multi_stream {
 	u32 buffer_type;
 	u32 enable;
