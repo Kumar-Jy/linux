@@ -1548,10 +1548,6 @@ static int ov13b10_probe(struct i2c_client *client)
 	if (!ov13b)
 		return -ENOMEM;
 
-	ov13b->dev = &client->dev;
-	if (!ov13b)
-		return -ENOMEM;
-
 	/* Initialize subdev */
 	v4l2_i2c_subdev_init(&ov13b->sd, client, &ov13b10_subdev_ops);
 
