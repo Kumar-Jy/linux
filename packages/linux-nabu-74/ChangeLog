@@ -2,7 +2,7 @@
 	* 7.4.0.rc3-4 (cumulative from 7.4.0.rc2-1):
 	- 7.4.0.rc2-1: Linux 7.4-rc2 rebase; PDC s2idle wake, camera clock/regulator, Iris power/watchdog adaptation, touch, audio and Type-C resume fixes
 	- 7.4.0.rc3-0: Linux 7.4-rc3 base; Iris queue locking and IOVA NULL checks; ath10k/QDSP6 upstream sync
-	- 7.4.0.rc3-4: restricted IOVA skip, BMS charger ordering, s2idle default, Iris VP9 extradata DMA and Gen1 format/buffer fixes; VP9 1080p/2K/4K hardware decode up to 135fps
+	- 7.4.0.rc3-4: restricted IOVA skip, BMS charger ordering, s2idle default, Iris VP9 extradata DMA and Gen1 format/buffer fixes; VP9 1080p/2K/4K hardware decode up to 135fps; CAMSS 7.4 pad ops & QDSP6 q6asm hw_ptr build fixes
 	- Packaging: bump linux-nabu-74 to 7.4.0.rc3-4 (kernel release 7.4.0-rc3-4-krjy)
 
 2026-11-18 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
