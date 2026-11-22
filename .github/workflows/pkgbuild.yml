@@ -8,7 +8,7 @@ on:
       upload_release:
         description: 'Upload the built package to a GitHub Release (tag includes kernel version)'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -157,7 +157,7 @@ jobs:
 
   release:
     name: Release ${{ github.ref_name }}
-    if: ${{ inputs.upload_release == true }}
+    if: ${{ inputs.upload_release == true && !contains(github.ref_name, '7.4') }}
     needs: build
     runs-on: ubuntu-24.04-arm
     env:
