@@ -1572,7 +1572,8 @@ int msm_vfe_subdev_init(struct camss *camss, struct vfe_device *vfe,
 	while (res->clock[vfe->nclocks])
 		vfe->nclocks++;
 
-	vfe->clock = devm_kzalloc_objs(dev, *vfe->clock, vfe->nclocks);
+	vfe->clock = devm_kcalloc(dev, vfe->nclocks, sizeof(*vfe->clock),
+				  GFP_KERNEL);
 	if (!vfe->clock)
 		return -ENOMEM;
 
@@ -1594,8 +1595,10 @@ int msm_vfe_subdev_init(struct camss *camss, struct vfe_device *vfe,
 			continue;
 		}
 
-		clock->freq = devm_kzalloc_objs(dev, *clock->freq,
-						clock->nfreqs);
+		clock->freq = devm_kcalloc(dev,
+					   clock->nfreqs,
+					   sizeof(*clock->freq),
+					   GFP_KERNEL);
 		if (!clock->freq)
 			return -ENOMEM;
 

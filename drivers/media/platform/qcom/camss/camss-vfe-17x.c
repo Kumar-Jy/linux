@@ -603,7 +603,7 @@ static int vfe_enable(struct vfe_line *line)
 
 	mutex_unlock(&vfe->stream_lock);
 
-	ret = vfe_get_output_v2(line);
+	ret = vfe_get_output(line);
 	if (ret < 0)
 		goto error_get_output;
 
