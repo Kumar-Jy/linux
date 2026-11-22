@@ -107,9 +107,28 @@ static void iris_hfi_gen1_read_changed_params(struct iris_inst *inst,
 	pixmp_ip->width = event.width;
 	pixmp_ip->height = event.height;
 
-	pixmp_op->width = ALIGN(event.width, 128);
-	pixmp_op->height = ALIGN(event.height, 32);
-	pixmp_op->plane_fmt[0].bytesperline = ALIGN(event.width, 128);
+	if (event.bit_depth == HFI_BITDEPTH_8 &&
+	    pixmp_op->pixelformat != V4L2_PIX_FMT_NV12 &&
+	    pixmp_op->pixelformat != V4L2_PIX_FMT_QC08C)
+		pixmp_op->pixelformat = V4L2_PIX_FMT_NV12;
+	else if (event.bit_depth == HFI_BITDEPTH_10 &&
+		 pixmp_op->pixelformat != V4L2_PIX_FMT_P010 &&
+		 pixmp_op->pixelformat != V4L2_PIX_FMT_QC10C)
+		pixmp_op->pixelformat = V4L2_PIX_FMT_P010;
+
+	switch (pixmp_op->pixelformat) {
+	case V4L2_PIX_FMT_P010:
+		pixmp_op->width = ALIGN(event.width, 128);
+		pixmp_op->height = ALIGN(event.height, 32);
+		pixmp_op->plane_fmt[0].bytesperline = ALIGN(event.width * 2, 256);
+		break;
+	case V4L2_PIX_FMT_NV12:
+	default:
+		pixmp_op->width = ALIGN(event.width, 128);
+		pixmp_op->height = ALIGN(event.height, 32);
+		pixmp_op->plane_fmt[0].bytesperline = ALIGN(event.width, 128);
+		break;
+	}
 	pixmp_op->plane_fmt[0].sizeimage = iris_get_buffer_size(inst, BUF_OUTPUT);
 
 	matrix_coeff =  FIELD_GET(GENMASK(7, 0), event.colour_space);
@@ -166,7 +185,8 @@ static void iris_hfi_gen1_read_changed_params(struct iris_inst *inst,
 	dst_q = v4l2_m2m_get_dst_vq(inst->m2m_ctx);
 	dst_q->min_reqbufs_allocation = inst->buffers[BUF_OUTPUT].min_count;
 
-	if (event.bit_depth || !event.pic_struct) {
+	if ((event.bit_depth != HFI_BITDEPTH_8 && event.bit_depth != HFI_BITDEPTH_10) ||
+	    !event.pic_struct) {
 		dev_err(core->dev, "unsupported content, bit depth: %x, pic_struct = %x\n",
 			event.bit_depth, event.pic_struct);
 		iris_inst_change_state(inst, IRIS_INST_ERROR);
