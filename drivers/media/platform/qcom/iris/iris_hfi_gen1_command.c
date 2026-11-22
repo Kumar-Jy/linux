@@ -8,6 +8,7 @@
 #include "iris_instance.h"
 #include "iris_vpu_buffer.h"
 
+#include <linux/dma-mapping.h>
 #include <linux/soc/qcom/llcc-qcom.h>
 #include <media/v4l2-mem2mem.h>
 
@@ -56,7 +57,7 @@ static int iris_hfi_gen1_sys_image_version(struct iris_core *core)
 	return iris_hfi_queue_cmd_write_locked(core, &packet, packet.hdr.size);
 }
 
-static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
+static int iris_hfi_gen1_sys_power_control_locked(struct iris_core *core, bool enable)
 {
 	struct hfi_sys_set_property_pkt *pkt;
 	struct hfi_enable *hfi;
@@ -77,6 +78,32 @@ static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
 	hfi->enable = enable;
 
 	ret = iris_hfi_queue_cmd_write_locked(core, pkt, pkt->hdr.size);
+	kfree(pkt);
+
+	return ret;
+}
+
+static int iris_hfi_gen1_sys_power_control(struct iris_core *core, bool enable)
+{
+	struct hfi_sys_set_property_pkt *pkt;
+	struct hfi_enable *hfi;
+	u32 packet_size;
+	int ret;
+
+	packet_size = struct_size(pkt, data, 1) + sizeof(*hfi);
+	pkt = kzalloc(packet_size, GFP_KERNEL);
+	if (!pkt)
+		return -ENOMEM;
+
+	hfi = (struct hfi_enable *)&pkt->data[1];
+
+	pkt->hdr.size = packet_size;
+	pkt->hdr.pkt_type = HFI_CMD_SYS_SET_PROPERTY;
+	pkt->num_properties = 1;
+	pkt->data[0] = HFI_PROPERTY_SYS_CODEC_POWER_PLANE_CTRL;
+	hfi->enable = enable;
+
+	ret = iris_hfi_queue_cmd_write(core, pkt, pkt->hdr.size);
 	kfree(pkt);
 
 	return ret;
@@ -194,7 +221,7 @@ error_put:
 
 static int iris_hfi_gen1_sys_interframe_powercollapse(struct iris_core *core)
 {
-	return iris_hfi_gen1_sys_power_control(core, true);
+	return iris_hfi_gen1_sys_power_control_locked(core, true);
 }
 
 static int iris_hfi_gen1_sys_pc_prep(struct iris_core *core)
@@ -261,7 +288,39 @@ static int iris_hfi_gen1_session_open(struct iris_inst *inst)
 	if (ret)
 		return ret;
 
-	return iris_wait_for_session_response(inst, false);
+	ret = iris_wait_for_session_response(inst, false);
+	if (ret)
+		return ret;
+
+	/*
+	 * Venus Gen1 firmware (SM8150/SM8250) sets bRequiresExtradata=1 for VP9
+	 * in vpxDec_Initialize().  vDec_FillThisBuffer() checks:
+	 *   cmp extradata_buffer, bRequiresExtradata  (1)
+	 *   bcc -> "Buffer validation failed"
+	 * so every HFI_CMD_SESSION_FILL_BUFFER for VP9 must carry a valid,
+	 * 4096-aligned DMA address.  Allocate a 16 KB coherent buffer now and
+	 * keep it alive for the entire session.
+	 */
+	if (inst->codec == V4L2_PIX_FMT_VP9 && inst->domain == DECODER) {
+		if (!inst->extradata_kvaddr) {
+			inst->extradata_size = SZ_16K;
+			inst->extradata_kvaddr =
+				dma_alloc_coherent(inst->core->dev, inst->extradata_size,
+						   &inst->extradata_da, GFP_KERNEL);
+			if (!inst->extradata_kvaddr) {
+				dev_err(inst->core->dev,
+					"Iris1: failed to alloc VP9 extradata buffer\n");
+				inst->extradata_da   = 0;
+				inst->extradata_size = 0;
+				return -ENOMEM;
+			}
+			dev_dbg(inst->core->dev,
+				"Iris1: VP9 extradata buf da=%pad size=%zu\n",
+				&inst->extradata_da, inst->extradata_size);
+		}
+	}
+
+	return 0;
 }
 
 static void iris_hfi_gen1_packet_session_cmd(struct iris_inst *inst,
@@ -407,8 +466,8 @@ static int iris_hfi_gen1_session_continue(struct iris_inst *inst, u32 plane)
 
 static int iris_hfi_gen1_queue_input_buffer(struct iris_inst *inst, struct iris_buffer *buf)
 {
-	struct hfi_session_empty_buffer_compressed_pkt com_ip_pkt;
-	struct hfi_session_empty_buffer_uncompressed_pkt uncom_ip_pkt;
+	struct hfi_session_empty_buffer_compressed_pkt com_ip_pkt = {0};
+	struct hfi_session_empty_buffer_uncompressed_pkt uncom_ip_pkt = {0};
 
 	if (inst->domain == DECODER) {
 		com_ip_pkt.shdr.hdr.size = sizeof(struct hfi_session_empty_buffer_compressed_pkt);
@@ -449,14 +508,15 @@ static int iris_hfi_gen1_queue_input_buffer(struct iris_inst *inst, struct iris_
 
 static int iris_hfi_gen1_queue_output_buffer(struct iris_inst *inst, struct iris_buffer *buf)
 {
-	struct hfi_session_fill_buffer_pkt op_pkt;
+	struct hfi_session_fill_buffer_pkt op_pkt = {0};
 
 	op_pkt.shdr.hdr.size = sizeof(struct hfi_session_fill_buffer_pkt);
 	op_pkt.shdr.hdr.pkt_type = HFI_CMD_SESSION_FILL_BUFFER;
 	op_pkt.shdr.session_id = inst->session_id;
 	op_pkt.output_tag = buf->index;
 	op_pkt.packet_buffer = buf->device_addr;
-	op_pkt.extradata_buffer = 0;
+	/* Gen1 HFI uses 32-bit addresses and the platform DMA mask is 32-bit. */
+	op_pkt.extradata_buffer = (u32)inst->extradata_da;
 	op_pkt.alloc_len = buf->buffer_size;
 	op_pkt.filled_len = buf->data_size;
 	op_pkt.offset = buf->data_offset;
@@ -978,21 +1038,36 @@ static int iris_hfi_gen1_set_raw_format(struct iris_inst *inst, u32 plane)
 		pixelformat = inst->fmt_dst->fmt.pix_mp.pixelformat;
 		if (iris_split_mode_enabled(inst)) {
 			fmt.buffer_type = HFI_BUFFER_OUTPUT;
-			fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
+			if (pixelformat == V4L2_PIX_FMT_P010 || pixelformat == V4L2_PIX_FMT_QC10C)
+				fmt.format = HFI_COLOR_FORMAT_YUV420_TP10_UBWC;
+			else
+				fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
 
 			ret = hfi_gen1_set_property(inst, ptype, &fmt, sizeof(fmt));
 			if (ret)
 				return ret;
 
 			fmt.buffer_type = HFI_BUFFER_OUTPUT2;
-			fmt.format = pixelformat == V4L2_PIX_FMT_NV12 ?
-				HFI_COLOR_FORMAT_NV12 : HFI_COLOR_FORMAT_NV12_UBWC;
+			if (pixelformat == V4L2_PIX_FMT_P010)
+				fmt.format = HFI_COLOR_FORMAT_P010;
+			else if (pixelformat == V4L2_PIX_FMT_NV12)
+				fmt.format = HFI_COLOR_FORMAT_NV12;
+			else if (pixelformat == V4L2_PIX_FMT_QC10C)
+				fmt.format = HFI_COLOR_FORMAT_YUV420_TP10_UBWC;
+			else
+				fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
 
 			ret = hfi_gen1_set_property(inst, ptype, &fmt, sizeof(fmt));
 		} else {
 			fmt.buffer_type = HFI_BUFFER_OUTPUT;
-			fmt.format = pixelformat == V4L2_PIX_FMT_NV12 ?
-				HFI_COLOR_FORMAT_NV12 : HFI_COLOR_FORMAT_NV12_UBWC;
+			if (pixelformat == V4L2_PIX_FMT_P010)
+				fmt.format = HFI_COLOR_FORMAT_P010;
+			else if (pixelformat == V4L2_PIX_FMT_NV12)
+				fmt.format = HFI_COLOR_FORMAT_NV12;
+			else if (pixelformat == V4L2_PIX_FMT_QC10C)
+				fmt.format = HFI_COLOR_FORMAT_YUV420_TP10_UBWC;
+			else
+				fmt.format = HFI_COLOR_FORMAT_NV12_UBWC;
 
 			ret = hfi_gen1_set_property(inst, ptype, &fmt, sizeof(fmt));
 		}
@@ -1055,8 +1130,8 @@ static int iris_hfi_gen1_set_num_bufs(struct iris_inst *inst, u32 plane)
 				return ret;
 
 			buf_count.type = HFI_BUFFER_OUTPUT2;
-			buf_count.count_actual = iris_vpu_buf_count(inst, BUF_DPB);
-			buf_count.count_min_host = iris_vpu_buf_count(inst, BUF_DPB);
+			buf_count.count_actual = VIDEO_MAX_FRAME;
+			buf_count.count_min_host = VIDEO_MAX_FRAME;
 
 			ret = hfi_gen1_set_property(inst, ptype, &buf_count, sizeof(buf_count));
 		} else {
@@ -1208,22 +1283,20 @@ static int iris_hfi_gen1_set_first_capture_config(struct iris_inst *inst)
 	const u32 count_ptype = HFI_PROPERTY_PARAM_BUFFER_COUNT_ACTUAL;
 	const u32 size_ptype = HFI_PROPERTY_PARAM_BUFFER_SIZE_ACTUAL;
 	const u32 frame_ptype = HFI_PROPERTY_PARAM_FRAME_SIZE;
-	struct hfi_buffer_count_actual count;
-	struct hfi_buffer_size_actual size;
-	struct hfi_framesize frame;
+	struct hfi_buffer_count_actual count = {0};
+	struct hfi_buffer_size_actual size = {0};
+	struct hfi_framesize frame = {0};
 	u32 dpb_count, output2_count;
 	int ret;
 
-	if (inst->capture_format_changed) {
-		ret = iris_hfi_gen1_set_raw_format(inst, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-		if (ret)
-			return ret;
-		ret = iris_hfi_gen1_set_format_constraints(inst,
+	ret = iris_hfi_gen1_set_raw_format(inst, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+	if (ret)
+		return ret;
+	ret = iris_hfi_gen1_set_format_constraints(inst,
 						    V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-		if (ret)
-			return ret;
-		inst->capture_format_changed = false;
-	}
+	if (ret)
+		return ret;
+	inst->capture_format_changed = false;
 
 	dpb_count = iris_vpu_buf_count(inst, BUF_DPB);
 	output2_count = vb2_get_num_buffers(dst_q);
@@ -1292,11 +1365,9 @@ static int iris_hfi_gen1_set_first_capture_config(struct iris_inst *inst)
 	/*
 	 * In split mode HFI_BUFFER_OUTPUT is the firmware-owned compressed
 	 * DPB, while OUTPUT2 is the client-visible linear capture stream.
-	 * The initial configuration uses VIDEO_MAX_FRAME before firmware has
-	 * reported the sequence requirements.  Before SESSION_CONTINUE,
-	 * replace that placeholder with the exact minimum number of DPBs which
-	 * iris_create_internal_buffers() is about to allocate and queue.  The
-	 * downstream SM8150 driver makes the same adjustment for split-mode DPBs.
+	 * The DPB count must strictly match the codec requirements (dpb_count),
+	 * while OUTPUT2 count_actual is set to the client-requested buffer count
+	 * so the firmware tracks all queued buffers accurately.
 	 */
 	count.type = HFI_BUFFER_OUTPUT;
 	count.count_actual = dpb_count;

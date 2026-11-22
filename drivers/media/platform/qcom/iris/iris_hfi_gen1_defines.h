@@ -111,7 +111,12 @@
 #define HFI_PROPERTY_PARAM_VDEC_COLOUR_SPACE		0x100300a
 #define HFI_CORE_ID_1					1
 #define HFI_COLOR_FORMAT_NV12				0x02
+#define HFI_COLOR_FORMAT_P010				0x4003
 #define HFI_COLOR_FORMAT_NV12_UBWC			0x8002
+#define HFI_COLOR_FORMAT_YUV420_TP10_UBWC		0xc002
+
+#define HFI_BITDEPTH_8					0x00000
+#define HFI_BITDEPTH_10					0x20002
 
 #define HFI_MSG_SYS_INIT				0x20001
 #define HFI_MSG_SYS_SESSION_INIT			0x20006
@@ -452,6 +457,12 @@ struct hfi_buffer_size_actual {
 	u32 type;
 	u32 size;
 };
+
+/*
+ * Venus Gen1 VP9 decoder architecture requires 8 reference frames +
+ * 3 display/reorder frames = 11 DPBs minimum.
+ */
+#define VP9_GEN1_MIN_DPB_COUNT				11
 
 struct hfi_multi_stream {
 	u32 buffer_type;

@@ -29,7 +29,7 @@ regenerate_uki() {
     # iris/venus; strip that stale blacklist so fresh installs get decode too.
     if [ ! -f /etc/cmdline.d/root.conf ]; then
         mkdir -p /etc/cmdline.d
-        printf 'root=PARTLABEL=linux rw systemd.gpt_auto=no fbcon=rotate:1 fw_devlink=permissive acpi=off earlycon\n' > /etc/cmdline.d/root.conf
+        printf 'root=PARTLABEL=linux rw systemd.gpt_auto=no fbcon=rotate:1 fw_devlink=permissive acpi=off earlycon mem_sleep_default=s2idle\n' > /etc/cmdline.d/root.conf
     else
         sed -i -e 's/ modprobe.blacklist=venus_core//' \
                -e 's/ module_blacklist=venus_core//' \
@@ -75,6 +75,19 @@ regenerate_uki() {
     mkinitcpio -P
 }
 
+ensure_s2idle_default() {
+    local f=/etc/cmdline.d/root.conf
+    mkdir -p /etc/cmdline.d
+
+    if [ ! -f "$f" ]; then
+        printf 'root=PARTLABEL=linux rw systemd.gpt_auto=no fbcon=rotate:1 fw_devlink=permissive acpi=off earlycon mem_sleep_default=s2idle\n' > "$f"
+    else
+        sed -i -E 's/mem_sleep_default=[^[:space:]]+/mem_sleep_default=s2idle/g' "$f"
+        grep -q 'mem_sleep_default=s2idle' "$f" || \
+            sed -i '$ s/$/ mem_sleep_default=s2idle/' "$f"
+    fi
+}
+
 pre_upgrade() {
     # 1. Preserve currently running/working UKI as arch-linux-nabu-old.efi
     if [ -f /boot/efi/EFI/arch/arch-linux-nabu.efi ]; then
@@ -97,24 +110,26 @@ pre_upgrade() {
 
 show_changelog() {
     echo -e "\n\e[1;34m::\e[0m \e[1mlinux-nabu ($1) changelog highlights:\e[0m"
-    echo "   * Kernel: Linux 7.3.3, sm8150 baseline"
+    echo "   * Kernel: Linux 7.3.5, sm8150 baseline"
     echo "   * Display: DSI PLL lock fix on boot, PHY runtime resume, PLL bias protection"
     echo "   * Graphics: Adreno 640 Zap shader early initramfs bundling (clean DRM boot)"
     echo "   * UFS: DT frequency table + reset quirk for Samsung UFS"
     echo "   * FastRPC SLPI: high-IOVA alias mapping + sensor PDR registration"
     echo "   * Camera & Video: OV13B10/OV8856/CN3927, Iris VPU hardware video decode"
     echo "   * Audio: SM8150 machine driver, 24-bit mic capture, CS35L41 speaker routing"
-    echo "   * Power: SMB5 USB-PD charger (50mA steps & Rp ad), FSA4480 BQ25970 fallback, wireless stylus"
+    echo "   * Power: SMB5 USB-PD charger (50mA steps & Rp advertising), LN8000 33W direct charge, wireless stylus"
     echo "   * Input: Novatek NT36523 touchscreen, Xiaomi keyboard & cover lid notifier"
     echo ""
 }
 
 post_install() {
+    ensure_s2idle_default
     regenerate_uki
     show_changelog "$1"
 }
 
 post_upgrade() {
+    ensure_s2idle_default
     regenerate_uki
     show_changelog "$1"
 }

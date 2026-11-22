@@ -233,6 +233,18 @@ fail_v4l2_fh_deinit:
 	return ret;
 }
 
+static void iris_free_extradata(struct iris_inst *inst)
+{
+	if (!inst->extradata_kvaddr)
+		return;
+
+	dma_free_coherent(inst->core->dev, inst->extradata_size,
+			  inst->extradata_kvaddr, inst->extradata_da);
+	inst->extradata_kvaddr = NULL;
+	inst->extradata_da     = 0;
+	inst->extradata_size   = 0;
+}
+
 static void iris_session_close(struct iris_inst *inst)
 {
 	const struct iris_hfi_session_ops *hfi_ops = inst->hfi_session_ops;
@@ -250,6 +262,12 @@ static void iris_session_close(struct iris_inst *inst)
 
 	if (wait_for_response)
 		iris_wait_for_session_response(inst, false);
+
+	/*
+	 * SESSION_END has been queued and, if queued successfully, acknowledged
+	 * by the wait above. A queue failure leaves no live firmware session.
+	 */
+	iris_free_extradata(inst);
 }
 
 static void iris_check_num_queued_internal_buffers(struct iris_inst *inst, u32 plane)
@@ -311,6 +329,7 @@ int iris_close(struct file *filp)
 	mutex_unlock(&inst->lock);
 	mutex_destroy(&inst->ctx_q_lock);
 	mutex_destroy(&inst->lock);
+	iris_free_extradata(inst);
 	kfree(inst->fmt_src);
 	kfree(inst->fmt_dst);
 	kfree(inst);

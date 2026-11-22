@@ -11,8 +11,8 @@
 #   - Default config: arch/arm64/configs/sm8150_defconfig
 
 pkgbase=linux-sm8150
-pkgver=7.3.4
-pkgrel=0
+pkgver=7.3.5
+pkgrel=4
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux"
 license=('GPL2')

@@ -56,7 +56,7 @@ The universal SM8150 kernel baseline (`arch/arm64/configs/sm8150_defconfig`) pro
 | **Video Decode** | Iris/Venus VPU Hardware Decoding | ✅ Working | `iris_driver` on `aa00000.video-codec` (`/dev/video0`, `/dev/video1`), native 7.3 VPU5 dual-core architecture |
 | **Audio (Speakers)**| Quad CS35L41 Stereo Amplifiers | ✅ Working | 4x Cirrus Logic CS35L41 over I2S/TDM (`QUAT_TDM_RX_0`), ALSA UCM + PipeWire |
 | **Audio (Headphones)**| Wired Type-C / 3.5mm Headphone Jack | ✅ Working | Dedicated `MultiMedia3` frontend + `SLIMBUS_0_RX <-> AIF1_PB` DAI-link on WCD9340 with ADSP port recovery |
-| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9340 on `hw:0,1` (MultiMedia2), clean 16-bit 48kHz capture |
+| **Audio (Mic)** | Built-in Multi-Microphone Array | ✅ Working | Qualcomm WCD9341 on `hw:0,1` (MultiMedia2), clean 24-bit 48kHz capture |
 | **Camera (Rear)**| 13MP OmniVision OV13B10 | ✅ Working | I2C `4-0010` via CCI, `msm_csiphy0` on CAMSS, CN3927 VCM autofocus, 4208x3120 capture |
 | **Camera (Front)**| 8MP OmniVision OV8856 | ✅ Working | I2C `5-0010` via CCI, `msm_csiphy1`, native `SBGGR10_1X10` format alignment |
 | **Flash / Torch** | Dual Rear LED Flash | ✅ Working | PM8150L flash controller (`/sys/class/leds/white:flash`), controllable via `nabu-torch` |
@@ -76,11 +76,11 @@ The universal SM8150 kernel baseline (`arch/arm64/configs/sm8150_defconfig`) pro
 
 ---
 
-## Linux 7.3 Release (7.3.4-0)
+## Linux 7.3 Release (7.3.5-4)
 
-The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.4** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
+The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.5** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
 
-### 0. Hardware Stability & Power State Fixes (7.3.4-0)
+### 0. Hardware Stability & Power State Fixes
 - **Deep Sleep Wakeup via PDC**: Routed SPMI PMIC summary interrupt through PDC pin 1 (`interrupts-extended = <&pdc 1 IRQ_TYPE_LEVEL_HIGH>;`) in `sm8150.dtsi` so the hardware power button wakes the tablet when the GIC is powered off in `s2idle`.
 - **TRION PLL Relock**: Configured `test_ctl_hi_val = 0x2` in `camcc-sm8150.c` to enable internal bias relocking on resume.
 - **Camera Digital Supply Stability**: Maintained `camera_vdig_1p2` regulator in always-on state to prevent I2C bus freeze on sensor unbind.
@@ -111,7 +111,23 @@ The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.4
 - **AFE Port Recovery**: Intercepts `ADSP_EALREADY` in `q6afe-dai.c` to force port stop and resync, resolving the issue where wired headphones could only play once per boot.
 - **Stream Close Handling**: Grouped `ASM_DATA_CMD_WRITE_V2` and `ASM_DATA_CMD_READ_V2` in `q6asm.c` to discard trailing in-flight buffer acknowledgments cleanly without dmesg errors.
 
-### 4. Multi-Distro Packaging
-- **Arch Linux ARM**: `packages/linux-sm8150-73` (`7.3.3-sm8150`) and `packages/linux-nabu-73` (`7.3.3-krjy`) producing `.pkg.tar.xz` kernel, headers, and automated UKI generation.
+### 4. Iris VPU Hardware Video Decode & Encode
+- SM8150 Iris VPU5 dual-core architecture ported to native Linux 7.3:
+  - Dual GDSC power domains (`mvs0` and `mvs1`) managed with asynchronous power sequencing.
+  - Dual clock supplies (`vcodec0_core` and `vcodec1_core`) scaled synchronously with OPP levels.
+  - Opp-table voltage ordering deferred until both GDSC power domains are operational.
+  - Zeroed HFI command and response ring memory buffers to avoid firmware assertion errors.
+  - Runtime PM forbid and ISR interrupt clear resolving `VIDIOC_REQBUFS` failures.
+  - Full hardware decode (`/dev/video0`, `/dev/video16`) and encode (`/dev/video1`, `/dev/video17`) verified (H.264 10.6x, HEVC 13.9x, VP9 up to 4K @ 135fps).
+
+### 5. Sleep, Power Management & System Stability
+- **S2idle Power Button Grace Window**: Restored a 300ms hardware timer grace window (`CONFIG_SUSPEND_S2IDLE_WAKE_GRACE`) in the PM core and hooked `pm_s2idle_set_wake_irq` for the PM8941 power key, eliminating instant wakeups upon button release.
+- **Keyboard Cover Pinctrl**: Preserved active pin control across display blanking in `xiaomi_keyboard.c`, eliminating I2C bus stalls when the screen turns off.
+- **UFS Storage**: 8-row frequency table (`freq-table-hz`) locking gears `<37500000 300000000>` for Samsung UFS stability; inline crypto engine bypass (`/delete-property/ qcom,ice;`).
+- **Zap Shader Early Bundling**: Bundle `/lib/firmware/qcom/sm8150/xiaomi/nabu/a640_zap.mbn` in initramfs via `mkinitcpio.conf` `FILES=`.
+- **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
+
+### 6. Multi-Distro Packaging & UKI
+- **Arch Linux ARM**: `packages/linux-sm8150-73` (`7.3.5-4-sm8150`) and `packages/linux-nabu-73` (`7.3.5-4-krjy`) producing `.pkg.tar.zst` kernel, headers, and automated UKI generation.
 - **Ubuntu / Debian**: Automated `.deb` kernel and header package builds via `bindeb-pkg`.
 - **Fedora**: Automated `.rpm` kernel packages via `binrpm-pkg`.
