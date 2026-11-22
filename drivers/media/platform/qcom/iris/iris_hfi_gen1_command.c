@@ -8,6 +8,7 @@
 #include "iris_instance.h"
 #include "iris_vpu_buffer.h"
 
+#include <linux/dma-mapping.h>
 #include <linux/soc/qcom/llcc-qcom.h>
 #include <media/v4l2-mem2mem.h>
 
@@ -287,7 +288,39 @@ static int iris_hfi_gen1_session_open(struct iris_inst *inst)
 	if (ret)
 		return ret;
 
-	return iris_wait_for_session_response(inst, false);
+	ret = iris_wait_for_session_response(inst, false);
+	if (ret)
+		return ret;
+
+	/*
+	 * Venus Gen1 firmware (SM8150/SM8250) sets bRequiresExtradata=1 for VP9
+	 * in vpxDec_Initialize().  vDec_FillThisBuffer() checks:
+	 *   cmp extradata_buffer, bRequiresExtradata  (1)
+	 *   bcc -> "Buffer validation failed"
+	 * so every HFI_CMD_SESSION_FILL_BUFFER for VP9 must carry a valid,
+	 * 4096-aligned DMA address.  Allocate a 16 KB coherent buffer now and
+	 * keep it alive for the entire session.
+	 */
+	if (inst->codec == V4L2_PIX_FMT_VP9 && inst->domain == DECODER) {
+		if (!inst->extradata_kvaddr) {
+			inst->extradata_size = SZ_16K;
+			inst->extradata_kvaddr =
+				dma_alloc_coherent(inst->core->dev, inst->extradata_size,
+						   &inst->extradata_da, GFP_KERNEL);
+			if (!inst->extradata_kvaddr) {
+				dev_err(inst->core->dev,
+					"Iris1: failed to alloc VP9 extradata buffer\n");
+				inst->extradata_da   = 0;
+				inst->extradata_size = 0;
+				return -ENOMEM;
+			}
+			dev_dbg(inst->core->dev,
+				"Iris1: VP9 extradata buf da=%pad size=%zu\n",
+				&inst->extradata_da, inst->extradata_size);
+		}
+	}
+
+	return 0;
 }
 
 static void iris_hfi_gen1_packet_session_cmd(struct iris_inst *inst,
@@ -433,8 +466,8 @@ static int iris_hfi_gen1_session_continue(struct iris_inst *inst, u32 plane)
 
 static int iris_hfi_gen1_queue_input_buffer(struct iris_inst *inst, struct iris_buffer *buf)
 {
-	struct hfi_session_empty_buffer_compressed_pkt com_ip_pkt;
-	struct hfi_session_empty_buffer_uncompressed_pkt uncom_ip_pkt;
+	struct hfi_session_empty_buffer_compressed_pkt com_ip_pkt = {0};
+	struct hfi_session_empty_buffer_uncompressed_pkt uncom_ip_pkt = {0};
 
 	if (inst->domain == DECODER) {
 		com_ip_pkt.shdr.hdr.size = sizeof(struct hfi_session_empty_buffer_compressed_pkt);
@@ -475,14 +508,15 @@ static int iris_hfi_gen1_queue_input_buffer(struct iris_inst *inst, struct iris_
 
 static int iris_hfi_gen1_queue_output_buffer(struct iris_inst *inst, struct iris_buffer *buf)
 {
-	struct hfi_session_fill_buffer_pkt op_pkt;
+	struct hfi_session_fill_buffer_pkt op_pkt = {0};
 
 	op_pkt.shdr.hdr.size = sizeof(struct hfi_session_fill_buffer_pkt);
 	op_pkt.shdr.hdr.pkt_type = HFI_CMD_SESSION_FILL_BUFFER;
 	op_pkt.shdr.session_id = inst->session_id;
 	op_pkt.output_tag = buf->index;
 	op_pkt.packet_buffer = buf->device_addr;
-	op_pkt.extradata_buffer = 0;
+	/* Gen1 HFI uses 32-bit addresses and the platform DMA mask is 32-bit. */
+	op_pkt.extradata_buffer = (u32)inst->extradata_da;
 	op_pkt.alloc_len = buf->buffer_size;
 	op_pkt.filled_len = buf->data_size;
 	op_pkt.offset = buf->data_offset;

@@ -9,6 +9,7 @@
 #include <linux/kref.h>
 
 #include <media/v4l2-ctrls.h>
+#include <linux/dma-mapping.h>
 
 #include "iris_buffer.h"
 #include "iris_core.h"
@@ -119,6 +120,13 @@ struct iris_inst {
 	u32				hfi_layer_count;
 	u32				display_delay;
 	bool				display_delay_enable;
+	/*
+	 * VP9 extradata: firmware requires a valid extradata_buffer address
+	 * on every HFI_CMD_SESSION_FILL_BUFFER for VP9 sessions.
+	 */
+	dma_addr_t			extradata_da;
+	void				*extradata_kvaddr;
+	size_t				extradata_size;
 };
 
 #endif
