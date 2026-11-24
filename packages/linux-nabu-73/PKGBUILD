@@ -38,6 +38,7 @@ prepare() {
   echo "-${pkgrel}" > localversion.10-pkgrel
 
   make ARCH=arm64 nabu_defconfig
+  make ARCH=arm64 olddefconfig
 }
 
 build() {
