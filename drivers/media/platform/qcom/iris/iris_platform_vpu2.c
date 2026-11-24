@@ -130,7 +130,7 @@ const struct iris_platform_data sc7280_data = {
 };
 
 const struct iris_platform_data sm8150_data = {
-	.firmware_desc_gen1 = &iris_vpu20_p1_gen1_desc,
+	.firmware_desc = &iris_vpu20_p1_gen1_desc,
 	.vpu_ops = &iris_vpu5_ops,
 	.icc_tbl = iris_icc_info_vpu2,
 	.icc_tbl_size = ARRAY_SIZE(iris_icc_info_vpu2),
