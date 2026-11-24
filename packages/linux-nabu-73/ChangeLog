@@ -1,8 +1,8 @@
 2026-11-24 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
-	* 7.3.6-1:
+	* 7.3.6-0:
 	- Linux: merge upstream stable Linux 7.3.6 (v7.3.6)
 	- Media: Iris integrate upstream instance refcounting (iris_inst_put)
-	- Packaging: bump linux-nabu to 7.3.6-1 (kernel release 7.3.6-1-krjy)
+	- Packaging: bump linux-nabu to 7.3.6-0 (kernel release 7.3.6-0-krjy)
 
 2026-11-22 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.4-0 -> 7.3.5-4 (cumulative):
