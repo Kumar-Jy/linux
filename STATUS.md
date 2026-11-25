@@ -45,7 +45,13 @@ To ensure all hardware features operate smoothly in userspace (Fedora, Arch, Deb
 | **Bluetooth & Wi-Fi** | `bluez`, `NetworkManager` or `iwd` | Bluetooth 5.0 stack (`bluetooth.service`) and Wi-Fi connection manager |
 
 > [!TIP]
-> **Maintainer & Porting Guide:** Ready-to-use UCM2 audio configurations, firmware trees, SLPI sensor daemons (`hexagonrpcd`), and RPM porting instructions from Arch Linux (`nabu-pkgs`) to Fedora / PocketBlue are fully documented in [USERSPACE.md](USERSPACE.md) and the [nabu-pkgs repository](https://github.com/Kumar-Jy/nabu-pkgs).
+> **Ready-to-Port Userspace Packages:**  
+> Working reference packages, UCM audio profiles, udev rules, and firmware are available in [nabu-pkgs](https://github.com/Kumar-Jy/nabu-pkgs):
+> - `packages/alsa-ucm-conf-xiaomi-nabu` &rarr; Quad CS35L41 speaker routing and mixer profiles
+> - `packages/linux-firmware-xiaomi-nabu` &rarr; GPU zap shader, Novatek touch FW, and Hexagon DSP firmware
+> - `packages/hexagonrpcd` & `libssc` &rarr; FastRPC reverse-listener for SLPI sensor island (auto-rotation & ALS)
+> - `packages/ffmpeg-iris` & `mpv-iris` &rarr; Hardware V4L2 M2M Iris video decoding
+> *(Note: Standard upstream `upower` works out-of-the-box natively on 7.3).*
 
 ### Recommended Kernel Cmdline
 Add to your bootloader or `/etc/cmdline.d/`:
