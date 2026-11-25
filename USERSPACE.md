@@ -14,7 +14,7 @@ Because Arch Linux and Fedora adhere to standard Linux filesystem hierarchies, p
 | **Device Firmware** | `packages/linux-firmware-xiaomi-nabu` | `xiaomi-nabu-firmware` | `/lib/firmware/` (`qcom/`, `novatek/`) |
 | **Sensors Reverse-Listener** | `packages/hexagonrpcd` & `libssc` | `hexagonrpcd` | `/usr/bin/hexagonrpcd`, `/usr/lib/systemd/system/` |
 | **Hardware Video Decode** | `packages/ffmpeg-iris` & `mpv-iris` | `ffmpeg-iris` / `mpv-iris` | `/usr/lib/iris-ffmpeg/`, `/usr/bin/` |
-| **Battery / Fuel Gauge** | `packages/upower-nncc` | `upower` overlay | Patch for `upower` daemon |
+| **Battery / Fuel Gauge** | Standard `upower` (upstream) | Standard `upower` | Fully supported out-of-the-box by upstream UPower with the modern `qcom_bms` driver. |
 | **Tablet Mode / Keyboard** | `packages/nabu-tablet-mode` | `nabu-tablet-mode` | `/usr/lib/udev/rules.d/`, `/usr/bin/` |
 | **Stylus Notification** | `packages/stylus-popup` | `stylus-popup` | `/etc/xdg/autostart/`, `/usr/bin/` |
 | **Qualcomm Storage IPC** | `packages/rmtfs` & `tqftpserv` | `rmtfs` | `/usr/bin/rmtfs`, `/usr/lib/systemd/system/` |
@@ -126,12 +126,12 @@ The Qualcomm SM8150 Iris VPU provides hardware-accelerated decoding for H.264, H
 
 ---
 
-## 5. Power & Battery Reporting (`upower-nncc`)
+## 5. Power & Battery Reporting (Standard Upstream `upower`)
 
-The PM8150B fuel gauge PMIC provides battery voltage, current, and capacity. Upstream UPower can occasionally miscalculate remaining battery percentages on Qualcomm platforms.
+With modern Linux 7.3 and the updated `qcom_bms` / `ln8000` drivers, the kernel properly exposes standard Linux power supply sysfs nodes (`/sys/class/power_supply/qcom-battery` and `qcom-usb`).
 
-- **Source in `nabu-pkgs`**: [`packages/upower-nncc`](https://github.com/Kumar-Jy/nabu-pkgs/tree/main/packages/upower-nncc)
-- **What it does**: Applies smoothing and direct capacity scaling from `/sys/class/power_supply/qcom-bms/` and `/sys/class/power_supply/ln8000-charger/`.
+- **Current Status**: Standard upstream `upower` works **completely out of the box** without any downstream patches.
+- **Legacy Workaround (`upower-nncc`)**: In older kernel versions (6.x), UPower had an aggressive heuristic that incorrectly marked the battery as "discharging" if the PMIC reported zero current before charging negotiation completed. The downstream `upower-nncc` package was used to bypass this check. With the 7.3 kernel driver fixes (accurate disconnect ordering and AICL lockout prevention), `upower-nncc` is no longer needed. Standard distro `upower` (Fedora / Arch) works cleanly.
 
 ---
 
