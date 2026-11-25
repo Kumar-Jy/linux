@@ -1950,7 +1950,7 @@ int msm_dsi_host_send_cmd_batch(struct mipi_dsi_host *host,
 		 * that used to push the page switch into the active scan and
 		 * trip the touch firmware watchdog.
 		 */
-		if (msm_dpu_dfps_line_count && msm_host->mode) {
+		if (msm_host->mode) {
 			int line, guard = 4000;
 
 			while (guard--) {
