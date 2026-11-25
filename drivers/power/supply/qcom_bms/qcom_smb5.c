@@ -988,3 +988,4 @@ MODULE_AUTHOR("Casey Connolly <casey.connolly@linaro.org>");
 MODULE_AUTHOR("TwinbornPlate75 <3342733415@qq.com>");
 MODULE_DESCRIPTION("Qualcomm SMB5 Charger Driver (qcom_bms sub-module)");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("IIO_CONSUMER");
