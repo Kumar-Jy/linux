@@ -15,8 +15,8 @@
 #   - Default config: arch/arm64/configs/nabu_defconfig
 
 pkgbase=linux-nabu
-pkgver=7.3.5
-pkgrel=4
+pkgver=7.3.6
+pkgrel=0
 arch=('aarch64')
 url="https://github.com/Kumar-Jy/linux"
 license=('GPL2')
@@ -38,6 +38,7 @@ prepare() {
   echo "-${pkgrel}" > localversion.10-pkgrel
 
   make ARCH=arm64 nabu_defconfig
+  make ARCH=arm64 olddefconfig
 }
 
 build() {

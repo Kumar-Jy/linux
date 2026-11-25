@@ -1,3 +1,11 @@
+2026-11-25 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.6-0:
+	- Linux: merge upstream stable Linux 7.3.6 (v7.3.6)
+	- Media: sync Iris sm8150_data firmware_desc with upstream stable revert
+	- Universal SM8150: enable Xiaomi keyboard driver in sm8150_defconfig
+	- DMA: mark BAM DMA engine as DMA_PRIVATE to prevent async_tx channel starvation
+	- Packaging: bump linux-sm8150 to 7.3.6-0 (kernel release 7.3.6-0-sm8150)
+
 2026-11-22 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.4-0 -> 7.3.5-4 (cumulative):
 	- 7.3.4-0: Linux 7.3.4 base; PDC s2idle wake, camera clock/regulator, Iris power/IOVA locking, touch, audio and Type-C resume fixes

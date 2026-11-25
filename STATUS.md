@@ -76,9 +76,9 @@ The universal SM8150 kernel baseline (`arch/arm64/configs/sm8150_defconfig`) pro
 
 ---
 
-## Linux 7.3 Release (7.3.5-4)
+## Linux 7.3 Release (7.3.6-0)
 
-The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.5** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
+The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.6** baseline (branches `sm8150/7.3.y` and `nabu/7.3.y`).
 
 ### 0. Hardware Stability & Power State Fixes
 - **Deep Sleep Wakeup via PDC**: Routed SPMI PMIC summary interrupt through PDC pin 1 (`interrupts-extended = <&pdc 1 IRQ_TYPE_LEVEL_HIGH>;`) in `sm8150.dtsi` so the hardware power button wakes the tablet when the GIC is powered off in `s2idle`.
@@ -128,6 +128,6 @@ The complete SM8150 stack is integrated onto the pristine upstream **Linux 7.3.5
 - **Sensors**: FastRPC SLPI sensor PDR registration with SDSP high-IOVA alias mapping for auto-rotation and ambient light sensing.
 
 ### 6. Multi-Distro Packaging & UKI
-- **Arch Linux ARM**: `packages/linux-sm8150-73` (`7.3.5-4-sm8150`) and `packages/linux-nabu-73` (`7.3.5-4-krjy`) producing `.pkg.tar.zst` kernel, headers, and automated UKI generation.
+- **Arch Linux ARM**: `packages/linux-sm8150-73` (`7.3.6-0-sm8150`) and `packages/linux-nabu-73` (`7.3.6-0-krjy`) producing `.pkg.tar.zst` kernel, headers, and automated UKI generation.
 - **Ubuntu / Debian**: Automated `.deb` kernel and header package builds via `bindeb-pkg`.
 - **Fedora**: Automated `.rpm` kernel packages via `binrpm-pkg`.
