@@ -1,0 +1,12 @@
+packages:
+  - name: modules-core
+    depends-on: []
+  - name: modules
+    depends-on:
+    - modules-core
+
+rules:
+  - kmod1: modules-core
+    exact_pkg: true
+  - kmod1: modules
+  - default: modules

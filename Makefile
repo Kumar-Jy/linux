@@ -22,6 +22,14 @@ $(if $(filter __%, $(MAKECMDGOALS)), \
 PHONY := __all
 __all:
 
+ifneq ($(realpath source),)
+include $(realpath source)/Makefile.rhelver
+else
+ifneq ($(realpath Makefile.rhelver),)
+include Makefile.rhelver
+endif
+endif
+
 # We are using a recursive build, so we need to do a little thinking
 # to get the ordering right.
 #

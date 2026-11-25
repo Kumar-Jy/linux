@@ -1,0 +1,16 @@
+# ~~~
+# Symbol: BLK_ERROR_INJECTION [=n]
+# Type  : bool
+# Defined at block/Kconfig:224
+#   Prompt: Enable block layer error injection
+#   Depends on: BLOCK [=y]
+#   Location:
+#     -> Enable the block layer (BLOCK [=y])
+#       -> Enable block layer error injection (BLK_ERROR_INJECTION [=n])
+# Selects: JUMP_LABEL [=y]
+# 
+# 
+# 
+# ~~~
+# Commit: e8dcf2d142bd (block: add configurable error injection)
+# CONFIG_BLK_ERROR_INJECTION is not set

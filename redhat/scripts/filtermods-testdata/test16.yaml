@@ -1,0 +1,26 @@
+packages:
+  - name: modules-core
+    depends-on: []
+  - name: modules
+    depends-on:
+    - modules-core
+  - name: modules-extra
+    depends-on:
+    - modules
+  - name: modules-internal
+    depends-on:
+    - modules
+  - name: modules-partner
+    depends-on:
+    - modules-core
+
+rules:
+  - kmod_net_bridge: modules-extra
+    exact_pkg: true
+  - kmod_internal_test: modules-internal
+    exact_pkg: true
+  - kmod_net_ovs: modules-extra
+  - kmod_stor_dm: modules-extra
+  - kmod_helper: modules-partner
+  - kmod_partner_drv: modules-partner
+  - default: modules

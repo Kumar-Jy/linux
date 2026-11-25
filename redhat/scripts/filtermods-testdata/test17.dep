@@ -1,0 +1,3 @@
+kernel/net/proto/real.ko: kernel/lib/base.ko
+kernel/net/proto/tests/test_kunit.ko: kernel/net/proto/real.ko kernel/lib/base.ko
+kernel/lib/base.ko:

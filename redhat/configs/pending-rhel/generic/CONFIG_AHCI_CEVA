@@ -1,0 +1,17 @@
+# ~~~
+# Symbol: AHCI_CEVA [=n]
+# Type  : tristate
+# Defined at drivers/ata/Kconfig:223
+#   Prompt: CEVA AHCI SATA support
+#   Depends on: ATA [=m] && HAS_DMA [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Serial ATA and Parallel ATA drivers (libata) (ATA [=m])
+#         -> CEVA AHCI SATA support (AHCI_CEVA [=n])
+# Selects: SATA_HOST [=y]
+# 
+# 
+# 
+# ~~~
+# Commit: a73ed35052ca (drivers: ata: add support for Ceva sata host controller)
+# CONFIG_AHCI_CEVA is not set

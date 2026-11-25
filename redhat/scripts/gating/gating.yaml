@@ -1,0 +1,24 @@
+--- !Policy
+product_versions:
+  - rhel-*
+decision_context: osci_compose_gate
+rules:
+  - !PassingTestCaseRule {test_case_name: cki.tier1-aarch64.functional}
+  - !PassingTestCaseRule {test_case_name: cki.tier1-ppc64le.functional}
+  - !PassingTestCaseRule {test_case_name: cki.tier1-s390x.functional}
+  - !PassingTestCaseRule {test_case_name: cki.tier1-x86_64.functional}
+  - !PassingTestCaseRule {test_case_name: s1-aws-ci_x86_64.brew-build.tier1.functional}
+  - !PassingTestCaseRule {test_case_name: s1-aws-ci_aarch64.brew-build.tier1.functional}
+  - !PassingTestCaseRule {test_case_name: s1-azure-ci_x86_64.brew-build.tier1.functional}
+  - !PassingTestCaseRule {test_case_name: s1-azure-ci_aarch64.brew-build.tier1.functional}
+  - !PassingTestCaseRule {test_case_name: s1-gcp-ci.brew-build.tier1.functional}
+--- !Policy
+product_versions:
+  - fedora-eln
+decision_context: bodhi_update_push_stable
+rules:
+  - !PassingTestCaseRule {test_case_name: update.install_default_update_netinst, scenario: "fedora.updates-baseos-boot-iso.aarch64.aarch64"}
+  - !PassingTestCaseRule {test_case_name: update.install_default_update_netinst, scenario: "fedora.updates-baseos-boot-iso.x86_64.64bit"}
+  - !PassingTestCaseRule {test_case_name: update.install_default_update_netinst, scenario: "fedora.updates-baseos-boot-iso.x86_64.bios"}
+  - !PassingTestCaseRule {test_case_name: update.installer_build, scenario: "fedora.updates-baseos-boot-iso.aarch64.aarch64"}
+  - !PassingTestCaseRule {test_case_name: update.installer_build, scenario: "fedora.updates-baseos-boot-iso.x86_64.64bit"}

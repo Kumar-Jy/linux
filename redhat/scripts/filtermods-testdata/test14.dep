@@ -1,0 +1,2 @@
+kernel/kmod1: kernel/kmod2
+kernel/kmod2:

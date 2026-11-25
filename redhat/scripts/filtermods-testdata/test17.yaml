@@ -1,0 +1,21 @@
+packages:
+  - name: modules-core
+    depends-on: []
+  - name: modules
+    depends-on:
+    - modules-core
+  - name: modules-internal
+    depends-on:
+    - modules-core
+    - modules
+  - name: modules-partner
+    depends-on:
+    - modules-core
+    - modules
+
+rules:
+  - .*kunit.*: modules-internal
+    exact_pkg: true
+    ignore_deps: true
+  - net/proto/.*: modules-partner
+  - default: modules

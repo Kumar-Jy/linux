@@ -1,0 +1,11 @@
+kernel/kmod_net_bridge: kernel/kmod_net_virt
+kernel/kmod_net_ovs: kernel/kmod_net_virt kernel/kmod_helper
+kernel/kmod_net_base: kernel/kmod_crypto
+kernel/kmod_net_virt: kernel/kmod_net_base
+kernel/kmod_stor_dm: kernel/kmod_stor_raid kernel/kmod_helper
+kernel/kmod_stor_raid: kernel/kmod_stor_base
+kernel/kmod_stor_base: kernel/kmod_crypto
+kernel/kmod_crypto:
+kernel/kmod_helper:
+kernel/kmod_partner_drv:
+kernel/kmod_internal_test:
