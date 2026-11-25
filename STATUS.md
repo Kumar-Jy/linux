@@ -44,6 +44,9 @@ To ensure all hardware features operate smoothly in userspace (Fedora, Arch, Deb
 | **Touchscreen** | `novatek_nt36523_fw.bin` in `/lib/firmware/novatek/` | Firmware binary for Novatek NT36523 touch controller |
 | **Bluetooth & Wi-Fi** | `bluez`, `NetworkManager` or `iwd` | Bluetooth 5.0 stack (`bluetooth.service`) and Wi-Fi connection manager |
 
+> [!TIP]
+> **Maintainer & Porting Guide:** Ready-to-use UCM2 audio configurations, firmware trees, SLPI sensor daemons (`hexagonrpcd`), and RPM porting instructions from Arch Linux (`nabu-pkgs`) to Fedora / PocketBlue are fully documented in [USERSPACE.md](USERSPACE.md) and the [nabu-pkgs repository](https://github.com/Kumar-Jy/nabu-pkgs).
+
 ### Recommended Kernel Cmdline
 Add to your bootloader or `/etc/cmdline.d/`:
 ```text
