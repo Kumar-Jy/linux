@@ -7,6 +7,7 @@
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
+#include <linux/export.h>
 #include <linux/interrupt.h>
 #include <linux/mfd/syscon.h>
 #include <linux/of.h>
@@ -1995,6 +1996,7 @@ out_restore:
 		return ret;
 	return sret < 0 ? sret : 0;
 }
+EXPORT_SYMBOL_GPL(msm_dsi_host_send_cmd_batch);
 
 static void dsi_err_worker(struct work_struct *work)
 {
@@ -3120,6 +3122,7 @@ u32 msm_dsi_host_dfps_get_fps(struct mipi_dsi_host *host)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(msm_dsi_host_dfps_get_fps);
 
 static void msm_dsi_sfpb_config(struct msm_dsi_host *msm_host, bool enable)
 {

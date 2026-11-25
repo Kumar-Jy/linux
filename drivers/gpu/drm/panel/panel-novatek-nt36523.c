@@ -73,8 +73,6 @@ static inline struct panel_info *to_panel_info(struct drm_panel *panel)
  */
 static struct panel_info *nabu_sync_panel;
 
-int (*msm_dfps_sync_pen_hook)(u32 fps);
-
 /*
  * Set by dfps_store() for the duration of one notification: when the frame
  * shrinks (60 -> 120), the DSI controller has no VIDEO_DONE boundary left to

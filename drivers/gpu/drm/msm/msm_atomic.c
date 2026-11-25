@@ -5,6 +5,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/export.h>
 
 #include <drm/drm_atomic_uapi.h>
 #include <drm/drm_vblank.h>
@@ -14,6 +15,9 @@
 #include "msm_drv.h"
 #include "msm_gem.h"
 #include "msm_kms.h"
+
+int (*msm_dfps_sync_pen_hook)(u32 fps);
+EXPORT_SYMBOL_GPL(msm_dfps_sync_pen_hook);
 
 /*
  * Helpers to control vblanks while we flush.. basically just to ensure
