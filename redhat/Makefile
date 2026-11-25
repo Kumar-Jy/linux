@@ -192,7 +192,7 @@ endif
 ifneq ($(STABLERC_MARKER),)
   MARKER:=$(STABLERC_MARKER)
 else
-  MARKER:=v$(UPSTREAM_TARBALL_NAME)
+  MARKER:=$(GITID)
 endif
 
 # If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
