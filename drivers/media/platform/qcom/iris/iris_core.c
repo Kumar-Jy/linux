@@ -10,6 +10,22 @@
 #include "iris_state.h"
 #include "iris_vpu_common.h"
 
+void iris_core_deinit_locked(struct iris_core *core, bool power_off)
+{
+	if (core->state == IRIS_CORE_DEINIT)
+		return;
+
+	if (core->iris_platform_data->legacy_vpu5)
+		iris_set_hw_state(core, false);
+	iris_fw_unload(core);
+
+	if (power_off)
+		iris_vpu_power_off(core);
+
+	iris_hfi_queues_deinit(core);
+	core->state = IRIS_CORE_DEINIT;
+}
+
 void iris_core_deinit(struct iris_core *core)
 {
 	int ret;
@@ -17,17 +33,7 @@ void iris_core_deinit(struct iris_core *core)
 	ret = pm_runtime_resume_and_get(core->dev);
 
 	mutex_lock(&core->lock);
-	if (core->state != IRIS_CORE_DEINIT) {
-		if (core->iris_platform_data->legacy_vpu5)
-			iris_set_hw_state(core, false);
-		iris_fw_unload(core);
-
-		if (!ret)
-			iris_vpu_power_off(core);
-
-		iris_hfi_queues_deinit(core);
-		core->state = IRIS_CORE_DEINIT;
-	}
+	iris_core_deinit_locked(core, !ret);
 	mutex_unlock(&core->lock);
 
 	if (!ret)

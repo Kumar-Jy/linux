@@ -139,8 +139,13 @@ int iris_hfi_pm_suspend(struct iris_core *core)
 {
 	int ret;
 
-	if (core->iris_platform_data->legacy_vpu5)
+	if (core->iris_platform_data->legacy_vpu5) {
+		if (!list_empty(&core->instances))
+			return 0;
+
+		iris_core_deinit_locked(core, true);
 		return 0;
+	}
 
 	ret = iris_vpu_prepare_pc(core);
 	if (ret) {
