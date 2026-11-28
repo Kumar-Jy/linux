@@ -1,3 +1,9 @@
+2026-11-28 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
+	* 7.3.6-1:
+	- Config: disable CONFIG_RT_GROUP_SCHED in nabu_defconfig for cgroup v2 real-time audio (rtkit/PipeWire)
+	- Media: Iris tear down legacy VPU5 core on system s2idle suspend, fixing -ETIMEDOUT (-110) after wake
+	- Packaging: bump linux-nabu to 7.3.6-1 (kernel release 7.3.6-1-krjy)
+
 2026-11-24 Kumar-Jy <20044626+Kumar-Jy@users.noreply.github.com>
 	* 7.3.6-0:
 	- Linux: merge upstream stable Linux 7.3.6 (v7.3.6)
